@@ -4,8 +4,8 @@
 - **Current milestone:** Milestone 1 — Foundation + First Working Scene
 - **Current branch:** `main`
 - **Overall project completion estimate:** 16%
-- **Milestone 1 completion:** 96%
-- **GitHub repository status:** Local repository complete; remote publication pending because `gh` authentication is invalid.
+- **Milestone 1 completion:** 98%
+- **GitHub repository status:** Public repository published at https://github.com/ahmadmemon/workspace-orchestrator with `main` tracking `origin/main` and five future-milestone tracking issues.
 - **Next milestone:** Milestone 2 — Reliable Orchestration, not started and blocked on Milestone 1 manual acceptance.
 
 ## Completed work
@@ -21,13 +21,11 @@
 ## Work in progress
 
 - Manual visual and interaction smoke testing by Ahmad
-- GitHub publication after CLI re-authentication
 
 ## Remaining Milestone 1 work
 
 - Confirm the menu-bar item, dashboard, scene editor, explicit demo installation, cancellation, and error presentation interactively
 - Add a real screenshot only after visual verification
-- Publish the public repository and create five future-milestone tracking issues when authenticated
 
 ## Known issues
 
@@ -38,7 +36,6 @@
 
 ## Known blockers
 
-- GitHub CLI token is invalid. Authenticate with `gh auth login -h github.com` before publication.
 - Interactive smoke testing cannot be truthfully completed without a person visually checking the running app.
 
 ## Verification record
