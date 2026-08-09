@@ -77,6 +77,22 @@ struct SceneEditorView: View {
             HStack {
                 Text("\(index + 1). \(action.displayName)").font(.headline)
                 Spacer()
+                Button {
+                    draft.actions.swapAt(index, index - 1)
+                } label: {
+                    Image(systemName: "arrow.up")
+                }
+                .help("Move action earlier")
+                .disabled(index == 0)
+                .buttonStyle(.borderless)
+                Button {
+                    draft.actions.swapAt(index, index + 1)
+                } label: {
+                    Image(systemName: "arrow.down")
+                }
+                .help("Move action later")
+                .disabled(index == draft.actions.count - 1)
+                .buttonStyle(.borderless)
                 Button(role: .destructive) { draft.actions.remove(at: index) } label: {
                     Image(systemName: "trash")
                 }
