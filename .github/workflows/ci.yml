@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build SceneCore
+        run: swift build --target SceneCore
+      - name: Run all tests
+        run: swift test
+      - name: Build macOS app
+        run: >-
+          xcodebuild -project WorkspaceOrchestrator.xcodeproj
+          -scheme WorkspaceOrchestratorApp
+          -configuration Debug
+          -destination 'platform=macOS,arch=arm64'
+          -derivedDataPath .build/XcodeDerivedData
+          CODE_SIGNING_ALLOWED=NO build
