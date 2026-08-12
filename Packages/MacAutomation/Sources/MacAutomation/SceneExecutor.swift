@@ -5,8 +5,8 @@ import SceneCore
 public struct SceneExecutor: Sendable {
     public typealias UpdateHandler = @Sendable (SceneRunResult) async -> Void
     private let engine: OrchestrationEngine
-    public init(applicationOpener: any ApplicationOpening, urlOpener: any URLOpening, processRunner: any ProcessRunning, fileOpener: (any FileOpening)? = nil, managedProcesses: (any ManagedProcessControlling)? = nil, keychain: (any KeychainStoring)? = nil, additionalActionExecutor: (any ActionExecuting)? = nil) {
-        let executor = NativeActionExecutor(applicationOpener: applicationOpener, urlOpener: urlOpener, processRunner: processRunner, fileOpener: fileOpener, managedProcesses: managedProcesses, keychain: keychain, additionalActionExecutor: additionalActionExecutor)
+    public init(applicationOpener: any ApplicationOpening, urlOpener: any URLOpening, processRunner: any ProcessRunning, fileOpener: (any FileOpening)? = nil, managedProcesses: (any ManagedProcessControlling)? = nil, keychain: (any KeychainStoring)? = nil, windowController: (any WindowLayoutControlling)? = nil, additionalActionExecutor: (any ActionExecuting)? = nil) {
+        let executor = NativeActionExecutor(applicationOpener: applicationOpener, urlOpener: urlOpener, processRunner: processRunner, fileOpener: fileOpener, managedProcesses: managedProcesses, keychain: keychain, windowController: windowController, additionalActionExecutor: additionalActionExecutor)
         engine = OrchestrationEngine(actionExecutor: executor, healthChecker: NativeHealthChecker(managedProcesses: managedProcesses))
     }
     public func execute(scene: Scene, onUpdate: UpdateHandler? = nil) async -> SceneRunResult { await engine.execute(scene: scene, onUpdate: onUpdate) }
@@ -14,7 +14,7 @@ public struct SceneExecutor: Sendable {
 }
 
 private struct NativeActionExecutor: ActionExecuting {
-    let applicationOpener: any ApplicationOpening; let urlOpener: any URLOpening; let processRunner: any ProcessRunning; let fileOpener: (any FileOpening)?; let managedProcesses: (any ManagedProcessControlling)?; let keychain: (any KeychainStoring)?; let additionalActionExecutor: (any ActionExecuting)?
+    let applicationOpener: any ApplicationOpening; let urlOpener: any URLOpening; let processRunner: any ProcessRunning; let fileOpener: (any FileOpening)?; let managedProcesses: (any ManagedProcessControlling)?; let keychain: (any KeychainStoring)?; let windowController: (any WindowLayoutControlling)?; let additionalActionExecutor: (any ActionExecuting)?
     func execute(_ action: SceneAction) async throws -> ActionExecutionOutcome {
         switch action {
         case .openApplication(let value): try await applicationOpener.openApplication(bundleIdentifier: value.bundleIdentifier); return .init(resources: [.init(actionID: value.id, kind: "application", identifier: value.bundleIdentifier, ownership: .unknown)])
@@ -35,6 +35,11 @@ private struct NativeActionExecutor: ActionExecuting {
             let resource = try await managedProcesses.start(value, environment: try await resolveEnvironment(value.environment))
             return .init(resources: [resource])
         case .wait: return .init()
+        case .windowLayout(let value):
+            guard let windowController else { throw OrchestrationFailure(category: .permission, message: "Window restoration requires Accessibility permission and a window adapter.") }
+            let result = try await windowController.apply(value)
+            if !result.unmatched.isEmpty, value.missingWindowPolicy == .fail { throw OrchestrationFailure(category: .windowRestoration, message: "Some reviewed windows could not be matched: \(result.unmatched.joined(separator: ", ")).") }
+            return .init(outputSummary: (result.warnings + (result.unmatched.isEmpty ? [] : ["Unmatched windows: \(result.unmatched.joined(separator: ", "))"])).joined(separator: "\n"))
         default:
             if let additionalActionExecutor { return try await additionalActionExecutor.execute(action) }
             throw OrchestrationFailure(category: .missingIntegration, message: "\(action.displayName) is not configured by the base macOS executor.", retryableCategory: .missingIntegration)
