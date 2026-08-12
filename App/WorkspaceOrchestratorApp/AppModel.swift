@@ -42,6 +42,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var voiceTranscript = ""
     @Published private(set) var voiceSuggestedScene: String?
     @Published private(set) var voiceAmbiguousScenes: [String] = []
+    @Published private(set) var launchAtLoginStatus: LaunchAtLoginStatus = .disabled
+    @Published private(set) var notificationPermissionStatus: PermissionState = .notDetermined
 
     let accessibilityPermission: any AccessibilityPermissionManaging
     let hotKeyController = GlobalHotKeyController()
@@ -51,6 +53,8 @@ final class AppModel: ObservableObject {
     private let managedProcesses: any ManagedProcessControlling; private let windowController: any WindowLayoutControlling; private let integrationDiscovery: any IntegrationDiscovering
     private let runningApplicationDiscovery: any RunningApplicationDiscovering
     private let approvalStore: any ProcessApprovalAuthorizing
+    private let launchAtLoginManager: any LaunchAtLoginManaging
+    private let notificationManager: any LocalNotificationManaging
     private var runTask: Task<Void, Never>?
     private var clapListener: LocalClapListener?
     private var voiceSessionID: UUID?
@@ -72,6 +76,8 @@ final class AppModel: ObservableObject {
         do { approvals = try JSONProcessApprovalStore.applicationSupportStore() }
         catch { approvals = JSONProcessApprovalStore(fileURL: fallback.appendingPathComponent("process-approvals.json")); presentedError = error.localizedDescription }
         approvalStore = approvals
+        launchAtLoginManager = SystemLaunchAtLoginManager()
+        notificationManager = SystemLocalNotificationManager()
         let runner = FoundationProcessRunner()
         self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: SystemKeychainStore(), windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner))
         spokenStatus.enabled = UserDefaults.standard.bool(forKey: "spokenStatusEnabled")
@@ -79,7 +85,7 @@ final class AppModel: ObservableObject {
         Task { await refresh() }
     }
 
-    func refresh() async { await loadScenes(); await loadHistory(); integrations = await integrationDiscovery.discover(); refreshCapturableApplications() }
+    func refresh() async { await loadScenes(); await loadHistory(); integrations = await integrationDiscovery.discover(); refreshCapturableApplications(); launchAtLoginStatus = launchAtLoginManager.status(); notificationPermissionStatus = await notificationManager.permissionStatus() }
     func refreshCapturableApplications() { capturableApplications = runningApplicationDiscovery.discoverCapturableApplications(excludingBundleIdentifier: Bundle.main.bundleIdentifier) }
     func loadScenes() async { isLoading = true; defer { isLoading = false }; do { scenes = try await store.loadScenes() } catch { presentedError = error.localizedDescription } }
     func loadHistory() async {
@@ -216,6 +222,20 @@ final class AppModel: ObservableObject {
     func cancelVoiceCommand() { voiceRecognizer.stop(); voiceSessionID = nil; voiceListening = false; voicePanelPresented = false }
     func confirmVoiceScene(named name: String) { voiceRecognizer.stop(); voiceSessionID = nil; voiceListening = false; voicePanelPresented = false; if let scene = scenes.first(where: { $0.name == name }) { run(scene) } }
     func setSpokenStatusEnabled(_ enabled: Bool) { spokenStatus.enabled = enabled; UserDefaults.standard.set(enabled, forKey: "spokenStatusEnabled") }
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do { try launchAtLoginManager.setEnabled(enabled); launchAtLoginStatus = launchAtLoginManager.status() }
+        catch { presentedError = error.localizedDescription; launchAtLoginStatus = launchAtLoginManager.status() }
+    }
+    func setNotificationsEnabled(_ enabled: Bool) async {
+        if !enabled { UserDefaults.standard.set(false, forKey: "notificationsEnabled"); return }
+        do {
+            var allowed = notificationPermissionStatus == .granted
+            if !allowed { allowed = try await notificationManager.requestPermission() }
+            notificationPermissionStatus = await notificationManager.permissionStatus()
+            UserDefaults.standard.set(allowed, forKey: "notificationsEnabled")
+            if !allowed { presentedError = "Notification permission was not granted." }
+        } catch { presentedError = error.localizedDescription }
+    }
     var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0-rc.1" }
     var buildNumber: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1" }
     private func accept(_ update: SceneRunResult) async {
@@ -224,6 +244,10 @@ final class AppModel: ObservableObject {
         do { try await historyStore.save(update) }
         catch { presentedError = error.localizedDescription }
         if previousStatus != update.status { spokenStatus.speak(sceneName: update.sceneName, status: update.status, warningCount: update.warningCount, failedAction: update.failedActionID.flatMap { id in update.actionRecords.first(where: { $0.id == id })?.name }) }
+        if previousStatus != update.status, UserDefaults.standard.bool(forKey: "notificationsEnabled"), [.ready, .readyWithWarnings, .failed].contains(update.status) {
+            do { try await notificationManager.notify(run: update) }
+            catch { presentedError = error.localizedDescription }
+        }
     }
     private func configureGlobalHotKey() {
         do { try hotKeyController.register(.init()) { [weak self] in self?.commandPalettePresented = true } }
