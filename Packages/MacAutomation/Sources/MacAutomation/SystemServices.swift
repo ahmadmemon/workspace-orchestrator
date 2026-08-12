@@ -82,6 +82,26 @@ public struct SystemLocalNotificationManager: LocalNotificationManaging {
     }
 }
 
+public protocol UpdateChecking: Sendable {
+    func latestVersion() async throws -> String
+}
+
+public struct GitHubReleaseUpdateChecker: UpdateChecking {
+    private let endpoint: URL
+    public init(endpoint: URL = URL(string: "https://api.github.com/repos/ahmadmemon/workspace-orchestrator/releases/latest")!) { self.endpoint = endpoint }
+    public func latestVersion() async throws -> String {
+        var request = URLRequest(url: endpoint)
+        request.timeoutInterval = 10
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("WorkspaceOrchestrator/1.0", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let tag = object?["tag_name"] as? String, !tag.isEmpty else { throw URLError(.cannotParseResponse) }
+        return tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+    }
+}
+
 private extension Character {
     var isASCIIControl: Bool { unicodeScalars.allSatisfy { $0.value < 32 || $0.value == 127 } }
 }

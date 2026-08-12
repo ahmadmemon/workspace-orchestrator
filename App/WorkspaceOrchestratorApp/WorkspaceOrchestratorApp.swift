@@ -39,15 +39,17 @@ struct WorkspaceOrchestratorApp: App {
 
 private struct MenuBarLabel: View {
     @Environment(\.openWindow) private var openWindow
+    @AppStorage("openDashboardAtLaunch") private var openDashboardAtLaunch = true
     let symbol: String
 
     var body: some View {
         Image(systemName: symbol)
             .accessibilityLabel("Workspace Orchestrator")
             .task {
-                guard ProcessInfo.processInfo.arguments.contains("--ui-testing") else { return }
-                openWindow(id: "dashboard")
-                NSApplication.shared.activate(ignoringOtherApps: true)
+                if ProcessInfo.processInfo.arguments.contains("--ui-testing") || openDashboardAtLaunch {
+                    openWindow(id: "dashboard")
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
             }
     }
 }

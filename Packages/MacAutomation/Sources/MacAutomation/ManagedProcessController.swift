@@ -6,7 +6,7 @@ public struct ManagedProcessSnapshot: Equatable, Sendable {
 }
 public protocol ManagedProcessControlling: Sendable {
     func start(_ action: ManagedProcessAction, environment: [String: String]) async throws -> ResourceRecord
-    func stop(identifier: String, graceSeconds: Double) async throws
+    func stop(identifier: String, graceSeconds: Double, forcedStopSeconds: Double) async throws
     func snapshot(identifier: String) async -> ManagedProcessSnapshot?
 }
 
@@ -34,9 +34,11 @@ public actor ManagedProcessController: ManagedProcessControlling {
         handles[action.singleInstanceKey] = handle
         return .init(actionID: action.id, kind: "managedProcess", identifier: action.singleInstanceKey, ownership: .created)
     }
-    public func stop(identifier: String, graceSeconds: Double) async throws {
+    public func stop(identifier: String, graceSeconds: Double, forcedStopSeconds: Double = 2) async throws {
         guard let handle = handles[identifier] else { return }; guard handle.process.isRunning else { handles.removeValue(forKey: identifier); return }
-        handle.process.terminate(); let deadline = Date().addingTimeInterval(max(0.1, min(graceSeconds, 120)))
+        handle.process.interrupt(); var deadline = Date().addingTimeInterval(max(0.1, min(graceSeconds, 120)))
+        while handle.process.isRunning, Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        if handle.process.isRunning { handle.process.terminate(); deadline = Date().addingTimeInterval(max(0.1, min(forcedStopSeconds, 60))) }
         while handle.process.isRunning, Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
         if handle.process.isRunning { kill(handle.process.processIdentifier, SIGKILL) }
         handles.removeValue(forKey: identifier)

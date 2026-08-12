@@ -1,3 +1,4 @@
+import AppKit
 import SceneCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -11,16 +12,30 @@ struct SettingsView: View {
     @AppStorage("reduceCustomEffects") private var reduceEffects = false
     @AppStorage("compactRows") private var compactRows = false
     @AppStorage("soundEffectsEnabled") private var soundEffects = false
+    @AppStorage("soundEffectsVolume") private var soundVolume = 0.5
+    @AppStorage("effectIntensity") private var effectIntensity = 0.65
+    @AppStorage("workspaceCoreAnimationIntensity") private var coreAnimationIntensity = 0.65
     @AppStorage("defaultSceneID") private var defaultSceneID = ""
     @AppStorage("menuBarPrimaryAction") private var menuBarPrimaryAction = "openDashboard"
+    @AppStorage("menuBarFavoriteLimit") private var menuBarFavoriteLimit = 5
+    @AppStorage("menuBarShowRecentScenes") private var menuBarShowRecent = true
+    @AppStorage("menuBarShowCurrentRun") private var menuBarShowCurrentRun = true
+    @AppStorage("openDashboardAtLaunch") private var openDashboardAtLaunch = true
+    @AppStorage("reopenInterruptedRunAtLaunch") private var reopenInterruptedRunAtLaunch = true
+    @AppStorage("checkForUpdatesAtLaunch") private var checkForUpdatesAtLaunch = false
     @AppStorage("hotKeySelection") private var hotKeySelection = "optionCommandSpace"
     @AppStorage("hotKeyLabel") private var hotKeyLabel = "⌥⌘Space"
+    @AppStorage("globalShortcutTarget") private var globalShortcutTarget = "commandPalette"
+    @AppStorage("globalShortcutFavoriteSceneID") private var globalShortcutFavoriteSceneID = ""
     @AppStorage("clapSensitivity") private var clapSensitivity = 0.65
     @AppStorage("clapAction") private var clapAction = "showCommandPalette"
     @AppStorage("clapRequiresConfirmation") private var clapRequiresConfirmation = true
+    @AppStorage("clapCooldown") private var clapCooldown = 2.5
     @AppStorage("clapTestSoundEnabled") private var clapTestSoundEnabled = true
     @AppStorage("voiceLocaleIdentifier") private var voiceLocale = Locale.current.identifier
     @AppStorage("voiceActivationPhrase") private var voicePhrase = "Workspace online"
+    @AppStorage("spokenStatusDetailLevel") private var spokenStatusDetailLevel = "concise"
+    @AppStorage("voiceMatchConfirmationPolicy") private var voiceMatchConfirmationPolicy = "confirmFuzzyAndAmbiguous"
     @AppStorage("executionDefaultConcurrency") private var defaultConcurrency = 3
     @AppStorage("executionDefaultTimeout") private var defaultTimeout = 0.0
     @AppStorage("executionRetryStrategy") private var retryStrategy = "none"
@@ -28,6 +43,13 @@ struct SettingsView: View {
     @AppStorage("executionRetryDelay") private var retryDelay = 1.0
     @AppStorage("executionFailurePolicy") private var failurePolicy = "stopScene"
     @AppStorage("managedProcessGraceSeconds") private var managedGrace = 5.0
+    @AppStorage("managedProcessForcedStopSeconds") private var managedForcedStop = 2.0
+    @AppStorage("executionDefaultOutputRetention") private var defaultOutputRetention = "summary"
+    @AppStorage("executionDefaultHealthInterval") private var defaultHealthInterval = 1.0
+    @AppStorage("executionDefaultHealthAttempts") private var defaultHealthAttempts = 10
+    @AppStorage("executionDefaultOwnershipPolicy") private var defaultOwnershipPolicy = "createdOnly"
+    @AppStorage("processApprovalBehavior") private var processApprovalBehavior = "rememberExact"
+    @AppStorage("advancedDiagnosticLogging") private var advancedDiagnosticLogging = false
     @AppStorage("historyRetentionDays") private var historyDays = 30
     @AppStorage("historyMaximumRunCount") private var historyRunCount = 200
     @AppStorage("historyOutputEnabled") private var historyOutputEnabled = true
@@ -37,6 +59,7 @@ struct SettingsView: View {
     @State private var newSecret = ""
     @State private var selectedReferenceID = ""
     @State private var replacementSecret = ""
+    @State private var renamedReferenceID = ""
     @State private var pendingSecretDeletion: String?
     @State private var importingSettings = false
     @State private var exportingSettings = false
@@ -44,6 +67,11 @@ struct SettingsView: View {
     @State private var confirmsSettingsReset = false
     @State private var confirmsHistoryClear = false
     @State private var confirmsFactoryReset = false
+    @State private var factoryResetScope = FactoryResetScope()
+    @State private var confirmsWindowLayoutReset = false
+    @State private var importingScenes = false
+    @State private var exportingScenes = false
+    @State private var sceneArchiveDocument: SceneArchiveDocument?
 
     var body: some View {
         TabView {
@@ -58,6 +86,7 @@ struct SettingsView: View {
             aboutTab.tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 760, height: 560)
+        .accessibilityIdentifier("screen.settings")
         .fileImporter(isPresented: $importingSettings, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
             guard case .success(let urls) = result, let url = urls.first else { if case .failure(let error) = result { model.presentedError = error.localizedDescription }; return }
             Task {
@@ -70,19 +99,36 @@ struct SettingsView: View {
             if case .failure(let error) = result { model.presentedError = error.localizedDescription }
             settingsDocument = nil
         }
+        .fileImporter(isPresented: $importingScenes, allowedContentTypes: [.workspaceOrchestratorArchive, .json], allowsMultipleSelection: false) { result in
+            guard case .success(let urls) = result, let url = urls.first else { if case .failure(let error) = result { model.presentedError = error.localizedDescription }; return }
+            Task {
+                let accessed = url.startAccessingSecurityScopedResource()
+                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                await model.previewImport(from: url)
+            }
+        }
+        .fileExporter(isPresented: $exportingScenes, document: sceneArchiveDocument, contentType: .workspaceOrchestratorArchive, defaultFilename: "Workspace-Orchestrator-Scenes.workspaceorchestrator") { result in
+            if case .failure(let error) = result { model.presentedError = error.localizedDescription }
+            sceneArchiveDocument = nil
+        }
         .confirmationDialog("Reset settings to defaults?", isPresented: $confirmsSettingsReset, titleVisibility: .visible) {
             Button("Reset Settings", role: .destructive) { Task { await model.resetSettings() } }
         } message: { Text("Resets General, Appearance, Activation, Execution, and Privacy preferences. Scenes, history, approvals, and Keychain references are retained.") }
-        .confirmationDialog("Factory reset local application data?", isPresented: $confirmsFactoryReset, titleVisibility: .visible) {
-            Button("Factory Reset", role: .destructive) { Task { await model.factoryReset() } }
-        } message: { Text("Deletes valid scenes, valid run history, process approvals, and settings, then reopens onboarding. Corrupt history files and Keychain secrets are deliberately preserved for recovery and safety.") }
+        .sheet(isPresented: $confirmsFactoryReset) { FactoryResetView(scope: $factoryResetScope) { scope in Task { await model.factoryReset(scope: scope); confirmsFactoryReset = false } }.frame(width: 560, height: 520) }
+        .confirmationDialog("Remove all saved window-layout actions?", isPresented: $confirmsWindowLayoutReset, titleVisibility: .visible) {
+            Button("Remove Window Layouts", role: .destructive) { Task { await model.resetWindowLayoutData() } }
+        } message: { Text("Removes Window Layout actions from saved scenes and clears the current capture draft. Other actions, scenes, settings, history, approvals, and Keychain secrets remain.") }
         .confirmationDialog("Clear valid run history?", isPresented: $confirmsHistoryClear, titleVisibility: .visible) {
             Button("Clear Valid Run History", role: .destructive) { Task { await model.clearRunHistory() } }
         } message: { Text("Scenes, settings, approvals, Keychain secrets, and corrupt history files are retained.") }
         .confirmationDialog("Delete Keychain reference?", isPresented: Binding(get: { pendingSecretDeletion != nil }, set: { if !$0 { pendingSecretDeletion = nil } }), titleVisibility: .visible, presenting: pendingSecretDeletion) { id in
             Button("Delete \(id)", role: .destructive) { Task { await model.deleteKeychainReference(id: id); pendingSecretDeletion = nil; selectedReferenceID = "" } }
-        } message: { id in Text("The secret value for \(id) will be deleted from this app's Keychain service. Scene references are not rewritten.") }
+        } message: { id in
+            let usages = model.secretReferenceUsages(id: id)
+            Text(usages.isEmpty ? "The secret value for \(id) will be deleted from this app's Keychain service. No saved scene references it." : "The secret value for \(id) will be deleted. \(usages.count) scene action reference(s) will become missing: \(usages.map { "\($0.sceneName) › \($0.actionName)" }.joined(separator: ", ")). Scene references are deliberately not rewritten so they can be repaired.")
+        }
         .alert("Workspace Orchestrator", isPresented: Binding(get: { model.presentedError != nil }, set: { if !$0 { model.presentedError = nil } })) { Button("OK") { model.presentedError = nil } } message: { Text(model.presentedError ?? "Unknown error") }
+        .task { await model.refresh() }
     }
 
     private var generalTab: some View {
@@ -90,24 +136,36 @@ struct SettingsView: View {
             Section("Startup and notifications") {
                 Toggle("Launch at login", isOn: Binding(get: { model.launchAtLoginStatus == .enabled }, set: model.setLaunchAtLogin))
                 LabeledContent("Launch status", value: model.launchAtLoginStatus.rawValue)
+                Toggle("Open Dashboard at launch", isOn: $openDashboardAtLaunch)
+                Toggle("Reopen interrupted-run recovery at launch", isOn: $reopenInterruptedRunAtLaunch)
+                Toggle("Check official releases for updates at launch", isOn: $checkForUpdatesAtLaunch)
                 Toggle("Local notifications", isOn: Binding(get: { notifications }, set: { enabled in notifications = enabled; Task { await model.setNotificationsEnabled(enabled) } }))
                 LabeledContent("Notification permission", value: model.notificationPermissionStatus.rawValue)
+                LabeledContent("Update status", value: model.updateCheckStatus)
+                Button("Check for Updates Now") { Task { await model.checkForUpdates() } }
             }
             Section("Default behavior") {
                 Picker("Default scene", selection: $defaultSceneID) { Text("None").tag(""); ForEach(model.scenes) { Text($0.name).tag($0.id) } }
                 Picker("Primary menu-bar action", selection: $menuBarPrimaryAction) { Text("Open Dashboard").tag("openDashboard"); Text("Open Command Palette").tag("showCommandPalette"); Text("Run Default Scene").tag("runDefaultScene") }
                 if menuBarPrimaryAction == "runDefaultScene", defaultSceneID.isEmpty { Label("Choose a default scene before using this action.", systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                Stepper("Menu-bar favorite limit: \(menuBarFavoriteLimit)", value: $menuBarFavoriteLimit, in: 1...10)
+                Toggle("Show recent scenes in menu bar", isOn: $menuBarShowRecent)
+                Toggle("Show current run in menu bar", isOn: $menuBarShowCurrentRun)
             }
-            Text("Updates are checked only when requested and open the official GitHub Releases source.").foregroundStyle(.secondary)
+            Text("Update checks contact only the official GitHub Releases API and never send scene or run data.").foregroundStyle(.secondary)
         }.padding(24)
     }
 
     private var appearanceTab: some View {
         Form {
             Picker("Theme", selection: $appearanceMode) { Text("Obsidian").tag("Obsidian"); Text("Follow System").tag("System") }
+            Slider(value: $effectIntensity, in: 0...1) { Text("Effect intensity") } minimumValueLabel: { Text("None") } maximumValueLabel: { Text("Full") }
+            Slider(value: $coreAnimationIntensity, in: 0...1) { Text("Workspace Core animation") } minimumValueLabel: { Text("Still") } maximumValueLabel: { Text("Full") }
             Toggle("Reduce custom glow and motion", isOn: $reduceEffects)
             Toggle("Compact list rows", isOn: $compactRows)
             Toggle("Completion sound effects", isOn: $soundEffects)
+            if soundEffects { Slider(value: $soundVolume, in: 0...1) { Text("Interface sound volume") } minimumValueLabel: { Image(systemName: "speaker") } maximumValueLabel: { Image(systemName: "speaker.wave.3") } }
+            Button("Reset Appearance Defaults") { model.resetAppearanceSettings() }
             Text("System Reduce Motion, Reduce Transparency, and Increase Contrast are always respected. Completion sounds never include scene or output content.").foregroundStyle(.secondary)
         }.padding(24)
     }
@@ -115,8 +173,10 @@ struct SettingsView: View {
     private var activationTab: some View {
         Form {
             Section("Global shortcut") {
-                Picker("Shortcut", selection: $hotKeySelection) { Text("⌥⌘Space").tag("optionCommandSpace"); Text("⌃⌥Space").tag("controlOptionSpace"); Text("⇧⌘Space").tag("shiftCommandSpace") }.onChange(of: hotKeySelection) { _, selection in applyHotKey(selection) }
+                HotKeyRecorder(label: hotKeyLabel) { keyCode, modifiers, label in hotKeySelection = "custom"; hotKeyLabel = label; model.updateGlobalHotKey(keyCode: keyCode, modifiers: modifiers, label: label) }
                 LabeledContent("Registered", value: hotKeyLabel)
+                Picker("Shortcut target", selection: $globalShortcutTarget) { Text("Open command palette").tag("commandPalette"); Text("Open scene picker").tag("scenePicker"); Text("Run selected favorite scene").tag("favoriteScene") }
+                if globalShortcutTarget == "favoriteScene" { Picker("Favorite scene", selection: $globalShortcutFavoriteSceneID) { Text("Choose…").tag(""); ForEach(model.favoriteScenes) { Text($0.name).tag($0.id) } } }
             }
             Section("Double clap — opt in") {
                 Toggle("Enable local double-clap detection", isOn: Binding(get: { model.clapEnabled }, set: { enabled in Task { await model.setClapEnabled(enabled) } }))
@@ -124,6 +184,7 @@ struct SettingsView: View {
                 Slider(value: $clapSensitivity, in: 0.1...1) { Text("Sensitivity") } minimumValueLabel: { Text("Low") } maximumValueLabel: { Text("High") }.onChange(of: clapSensitivity) { _, _ in model.pauseClapForConfigurationChange() }
                 Picker("Action", selection: $clapAction) { Text("Show Command Palette").tag("showCommandPalette"); Text("Run Default Scene").tag("runDefaultScene") }.onChange(of: clapAction) { _, _ in model.pauseClapForConfigurationChange() }
                 Toggle("Require confirmation before running a scene", isOn: $clapRequiresConfirmation).disabled(clapAction != "runDefaultScene")
+                Stepper("Cooldown: \(clapCooldown, specifier: "%.1f") seconds", value: $clapCooldown, in: 0.5...30, step: 0.5).onChange(of: clapCooldown) { _, _ in model.pauseClapForConfigurationChange() }
                 Toggle("Audible confirmation in test mode", isOn: $clapTestSoundEnabled)
                 HStack { Button("Calibrate Ambient Noise (5s)") { Task { await model.beginClapCalibration() } }.disabled(model.clapState == .calibrating); Button("Test One Double Clap") { Task { await model.beginClapTest() } }.disabled(model.clapState == .testing); Button("Resume Listening") { Task { await model.resumeClapListening() } }.disabled(!model.clapEnabled || model.clapListening || model.clapState == .calibrating || model.clapState == .testing) }
                 if let result = model.clapCalibrationResult {
@@ -142,8 +203,11 @@ struct SettingsView: View {
                 TextField("Activation phrase", text: $voicePhrase)
                 Button("Begin Voice Command") { Task { await model.beginVoiceCommand() } }.disabled(!voiceEnabled || model.voiceListening)
                 Toggle("Spoken status", isOn: Binding(get: { spokenStatus }, set: { spokenStatus = $0; model.setSpokenStatusEnabled($0) }))
+                Picker("Spoken detail", selection: $spokenStatusDetailLevel) { Text("Concise, no scene names").tag("concise"); Text("Detailed").tag("detailed") }.onChange(of: spokenStatusDetailLevel) { _, value in model.setSpokenStatusDetailLevel(value) }
+                Picker("Fuzzy or ambiguous matches", selection: $voiceMatchConfirmationPolicy) { Text("Confirm fuzzy and ambiguous").tag("confirmFuzzyAndAmbiguous"); Text("Confirm ambiguous only").tag("confirmAmbiguousOnly") }
                 LabeledContent("Speech recognition", value: model.speechPermissionStatus.rawValue)
             }
+            Button("Reset Activation Settings") { Task { await model.resetActivationSettings() } }
             Text("Audio features remain off until explicitly enabled and permitted. Clap audio is never stored; voice has no cloud fallback.").foregroundStyle(.secondary)
         }.padding(24)
     }
@@ -159,8 +223,14 @@ struct SettingsView: View {
                 HStack { Text("Initial retry delay"); Spacer(); TextField("Seconds", value: $retryDelay, format: .number).frame(width: 100); Text("seconds") }
                 Picker("Failure policy", selection: $failurePolicy) { Text("Stop scene").tag("stopScene"); Text("Continue degraded").tag("continueDegraded"); Text("Continue optional").tag("continueOptional"); Text("Skip dependents").tag("skipDependents") }
                 HStack { Text("Managed-process grace"); Spacer(); TextField("Seconds", value: $managedGrace, format: .number).frame(width: 100); Text("seconds") }
+                HStack { Text("Terminate before force kill"); Spacer(); TextField("Seconds", value: $managedForcedStop, format: .number).frame(width: 100); Text("seconds") }
+                Picker("Output retention", selection: $defaultOutputRetention) { Text("None").tag("none"); Text("Summary").tag("summary"); Text("Bounded").tag("bounded") }
+                HStack { Text("Health-check interval"); Spacer(); TextField("Seconds", value: $defaultHealthInterval, format: .number).frame(width: 100); Text("seconds") }
+                Stepper("Health-check attempt limit: \(defaultHealthAttempts)", value: $defaultHealthAttempts, in: 1...100)
+                Picker("Resource ownership", selection: $defaultOwnershipPolicy) { Text("Stop only resources this run created").tag("createdOnly"); Text("Also stop explicitly adopted resources").tag("includeAdopted") }
+                Picker("Process approvals", selection: $processApprovalBehavior) { Text("Remember exact approvals").tag("rememberExact"); Text("Ask every run").tag("askEveryRun") }
             }
-            Text("Defaults apply only when creating a new scene or adding a new action. Existing saved plans are never silently rewritten. Process-capable actions still require exact-configuration approval.").foregroundStyle(.secondary)
+            Text("Defaults apply only when creating a new scene or adding a new action. Existing saved plans are never silently rewritten. Including adopted resources can stop a process the app did not launch and therefore requires this explicit choice.").foregroundStyle(.secondary)
         }.padding(24)
     }
 
@@ -172,17 +242,31 @@ struct SettingsView: View {
                 Toggle("Store bounded redacted output", isOn: $historyOutputEnabled).onChange(of: historyOutputEnabled) { _, _ in applyRetention() }
                 if historyOutputEnabled { Picker("Maximum output per action", selection: $historyOutputBytes) { Text("8 KB").tag(8_192); Text("32 KB").tag(32_768); Text("128 KB").tag(131_072); Text("512 KB").tag(524_288) }.onChange(of: historyOutputBytes) { _, _ in applyRetention() } }
                 LabeledContent("Current storage", value: ByteCountFormatter.string(fromByteCount: model.historyStorageBytes, countStyle: .file))
-                Button("Prune Now") { Task { await model.pruneRunHistory() } }
+                HStack { Button("Prune Now") { Task { await model.pruneRunHistory() } }; Button("Clear Valid History…", role: .destructive) { confirmsHistoryClear = true }; Button("Open Run-History Folder") { model.openRunHistoryLocation() } }
+                Text("Diagnostic exports are bounded and redacted, but may contain scene names, action names, paths, and error summaries. Review every export before sharing.").font(.caption).foregroundStyle(.secondary)
+                LabeledContent("Voice transcript retention", value: "Not retained after the explicit session")
+                LabeledContent("Clap audio retention", value: "Never recorded or stored")
             }
             Section("Keychain secret references") {
                 Text("Values are written directly to macOS Keychain and are never displayed, exported, logged, or stored in scene JSON.").font(.callout).foregroundStyle(.secondary)
                 TextField("New reference identifier", text: $newReferenceID)
                 SecureField("Secret value", text: $newSecret)
                 Button("Create Reference") { Task { if await model.createKeychainReference(id: newReferenceID, secret: newSecret) { newReferenceID = ""; newSecret = "" } } }.disabled(newReferenceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newSecret.isEmpty)
-                if !model.keychainReferenceIDs.isEmpty {
-                    Picker("Existing reference", selection: $selectedReferenceID) { Text("Select…").tag(""); ForEach(model.keychainReferenceIDs, id: \.self) { Text($0).tag($0) } }
+                if !model.allKnownSecretReferenceIDs.isEmpty {
+                    Picker("Secret reference label", selection: $selectedReferenceID) { Text("Select…").tag(""); ForEach(model.allKnownSecretReferenceIDs, id: \.self) { Text($0).tag($0) } }
+                    if !selectedReferenceID.isEmpty {
+                        LabeledContent("Keychain status", value: model.keychainReferenceExists(id: selectedReferenceID) ? "Present" : "Missing — repair required")
+                        let usages = model.secretReferenceUsages(id: selectedReferenceID)
+                        if usages.isEmpty { Text("No saved scene references this secret.").font(.caption).foregroundStyle(.secondary) }
+                        else { ForEach(usages) { usage in Text("\(usage.sceneName) › \(usage.actionName) › \(usage.environmentName)").font(.caption.monospaced()) } }
+                    }
                     SecureField("Replacement secret value", text: $replacementSecret)
-                    HStack { Button("Update Without Revealing") { let id = selectedReferenceID; Task { if await model.updateKeychainReference(id: id, secret: replacementSecret) { replacementSecret = "" } } }.disabled(selectedReferenceID.isEmpty || replacementSecret.isEmpty); Button("Delete Reference…", role: .destructive) { pendingSecretDeletion = selectedReferenceID }.disabled(selectedReferenceID.isEmpty) }
+                    HStack {
+                        Button("Replace Without Revealing") { let id = selectedReferenceID; Task { if await model.updateKeychainReference(id: id, secret: replacementSecret) { replacementSecret = "" } } }.disabled(selectedReferenceID.isEmpty || replacementSecret.isEmpty || !model.keychainReferenceExists(id: selectedReferenceID))
+                        Button("Repair Missing Reference") { let id = selectedReferenceID; Task { if await model.repairKeychainReference(id: id, secret: replacementSecret) { replacementSecret = "" } } }.disabled(selectedReferenceID.isEmpty || replacementSecret.isEmpty || model.keychainReferenceExists(id: selectedReferenceID))
+                    }
+                    TextField("Rename label", text: $renamedReferenceID)
+                    HStack { Button("Rename Without Revealing") { let oldID = selectedReferenceID; let newID = renamedReferenceID; Task { if await model.renameKeychainReference(from: oldID, to: newID) { selectedReferenceID = newID.trimmingCharacters(in: .whitespacesAndNewlines); renamedReferenceID = "" } } }.disabled(selectedReferenceID.isEmpty || renamedReferenceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.keychainReferenceExists(id: selectedReferenceID)); Button("Delete Reference…", role: .destructive) { pendingSecretDeletion = selectedReferenceID }.disabled(selectedReferenceID.isEmpty || !model.keychainReferenceExists(id: selectedReferenceID)) }
                 }
             }
             Text("No account, telemetry, analytics, cloud sync, or hosted backend. Redaction is defense in depth; review diagnostic files before sharing.").foregroundStyle(.secondary)
@@ -197,6 +281,8 @@ struct SettingsView: View {
             LabeledContent("Microphone", value: model.microphonePermissionStatus.rawValue)
             LabeledContent("Speech", value: model.speechPermissionStatus.rawValue)
             LabeledContent("Notifications", value: model.notificationPermissionStatus.rawValue)
+            LabeledContent("Launch at login", value: model.launchAtLoginStatus.rawValue)
+            Button("Refresh Current Permission State") { Task { await model.refresh() } }
             Text("Permission Center contains explicit request buttons and the relevant System Settings links. Permissions are requested only when their feature is enabled or used.").foregroundStyle(.secondary)
         }.padding(24)
     }
@@ -217,14 +303,26 @@ struct SettingsView: View {
                 Button("Import Settings…") { importingSettings = true }
                 Text("Settings exports contain only the allow-listed preferences shown here. They never contain scenes, history, approvals, Keychain values, or diagnostic output.").font(.caption).foregroundStyle(.secondary)
             }
+            Section("Scenes and local data") {
+                Button("Import Scenes…") { importingScenes = true }
+                Button("Export All Scenes…") { prepareSceneExport() }.disabled(model.scenes.isEmpty)
+                Button("Open Application Support") { model.openApplicationSupport() }
+                Button("Open Run-History Location") { model.openRunHistoryLocation() }
+                Button("Reset Window-Layout Data…", role: .destructive) { confirmsWindowLayoutReset = true }
+            }
+            Section("Diagnostics") {
+                Toggle("Advanced diagnostic logging", isOn: $advancedDiagnosticLogging)
+                Text("When enabled, unified logging records only state names and aggregate counts—never scene content, paths, command arguments, output, transcripts, or secret values.").font(.caption).foregroundStyle(.secondary)
+                Button("Open Diagnostics") { model.selectedSection = .diagnostics }
+            }
             Section("Reset by scope") {
                 Button("Reopen Onboarding") { model.resetOnboarding() }
                 Button("Reset Settings to Defaults…", role: .destructive) { confirmsSettingsReset = true }
                 Button("Clear Valid Run History…", role: .destructive) { confirmsHistoryClear = true }
-                Button("Factory Reset Local App Data…", role: .destructive) { confirmsFactoryReset = true }
-                Text("Factory reset scope: settings, valid scenes, valid history, and process approvals. Keychain secrets and corrupt history files are excluded and preserved.").font(.caption).foregroundStyle(.secondary)
+                Button("Factory Reset by Explicit Scope…", role: .destructive) { factoryResetScope = .init(); confirmsFactoryReset = true }
+                Text("Factory reset presents separate choices for settings, scenes, valid history, Keychain secrets, window layouts, and approvals, followed by a typed confirmation. Corrupt history files remain preserved.").font(.caption).foregroundStyle(.secondary)
             }
-            Section { Button("Open Diagnostics") { model.selectedSection = .diagnostics }; Text("There is no global process-approval bypass. Release updates remain explicit downloads from the official source.").foregroundStyle(.secondary) }
+            Section { Text("There is no global process-approval bypass. Release updates remain explicit downloads from the official source.").foregroundStyle(.secondary) }
         }.padding(24)
     }
 
@@ -232,14 +330,8 @@ struct SettingsView: View {
         Form { LabeledContent("Version", value: model.appVersion); LabeledContent("Build", value: model.buildNumber); Link("Check for Updates", destination: URL(string: "https://github.com/ahmadmemon/workspace-orchestrator/releases")!); Link("Documentation", destination: URL(string: "https://github.com/ahmadmemon/workspace-orchestrator/tree/main/docs")!) }.padding(24)
     }
 
-    private func applyHotKey(_ selection: String) {
-        switch selection {
-        case "controlOptionSpace": hotKeyLabel = "⌃⌥Space"; model.updateGlobalHotKey(keyCode: 49, modifiers: 6_144, label: hotKeyLabel)
-        case "shiftCommandSpace": hotKeyLabel = "⇧⌘Space"; model.updateGlobalHotKey(keyCode: 49, modifiers: 768, label: hotKeyLabel)
-        default: hotKeyLabel = "⌥⌘Space"; model.updateGlobalHotKey(keyCode: 49, modifiers: 2_304, label: hotKeyLabel)
-        }
-    }
     private func applyRetention() { Task { await model.updateHistoryRetention(days: historyDays, maximumRunCount: historyRunCount, outputEnabled: historyOutputEnabled, maximumOutputBytes: historyOutputBytes) } }
+    private func prepareSceneExport() { do { sceneArchiveDocument = .init(data: try SceneArchiveService.export(model.scenes, appVersion: model.appVersion)); exportingScenes = true } catch { model.presentedError = error.localizedDescription } }
 }
 
 private struct SettingsDocument: FileDocument {
@@ -248,4 +340,87 @@ private struct SettingsDocument: FileDocument {
     init(data: Data) { self.data = data }
     init(configuration: ReadConfiguration) throws { data = configuration.file.regularFileContents ?? Data() }
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { .init(regularFileWithContents: data) }
+}
+
+private struct FactoryResetView: View {
+    @Binding var scope: FactoryResetScope
+    let confirm: (FactoryResetScope) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmation = ""
+
+    var body: some View {
+        Form {
+            Section("Choose exact reset scope") {
+                Toggle("Settings and onboarding state", isOn: $scope.settings)
+                Toggle("Valid saved scenes", isOn: $scope.scenes)
+                Toggle("Valid run history", isOn: $scope.history)
+                Toggle("Keychain secrets", isOn: $scope.keychainSecrets)
+                Toggle("Window-layout actions only", isOn: $scope.windowLayouts).disabled(scope.scenes)
+                Toggle("Stored process approvals", isOn: $scope.approvals)
+            }
+            Section("Scope preview") {
+                Text(scopeSummary).font(.callout).textSelection(.enabled)
+                if scope.keychainSecrets { Label("Deleting Keychain secrets can break scene environment references until repaired.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
+                Text("Corrupt history files are always preserved. Unselected categories remain untouched.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Strong confirmation") {
+                TextField("Type RESET", text: $confirmation)
+                HStack { Button("Cancel") { dismiss() }; Spacer(); Button("Reset Selected Categories", role: .destructive) { confirm(scope) }.disabled(!scope.hasSelection || confirmation != "RESET") }
+            }
+        }
+        .formStyle(.grouped)
+        .padding(16)
+        .accessibilityIdentifier("settings.factoryResetScope")
+    }
+
+    private var scopeSummary: String {
+        var labels: [String] = []
+        if scope.settings { labels.append("settings") }; if scope.scenes { labels.append("scenes") }; if scope.history { labels.append("valid history") }; if scope.keychainSecrets { labels.append("Keychain secrets") }; if scope.windowLayouts && !scope.scenes { labels.append("window layouts") }; if scope.approvals { labels.append("approvals") }
+        return labels.isEmpty ? "Nothing selected." : "Will delete: \(labels.joined(separator: ", "))."
+    }
+}
+
+private struct HotKeyRecorder: NSViewRepresentable {
+    let label: String
+    let onRecord: (UInt32, UInt32, String) -> Void
+
+    func makeNSView(context: Context) -> RecorderButton {
+        let button = RecorderButton()
+        button.onRecord = onRecord
+        button.title = "Record Shortcut…  \(label)"
+        button.bezelStyle = .rounded
+        button.setAccessibilityLabel("Global shortcut recorder")
+        return button
+    }
+
+    func updateNSView(_ button: RecorderButton, context: Context) { if !button.recording { button.title = "Record Shortcut…  \(label)" }; button.onRecord = onRecord }
+
+    final class RecorderButton: NSButton {
+        var onRecord: ((UInt32, UInt32, String) -> Void)?
+        var recording = false
+        override var acceptsFirstResponder: Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            recording = true
+            title = "Type a shortcut (Esc cancels)…"
+            window?.makeFirstResponder(self)
+        }
+
+        override func keyDown(with event: NSEvent) {
+            if event.keyCode == 53 { finishRecording(); return }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags.contains(.command) || flags.contains(.control) || flags.contains(.option) else { NSSound.beep(); return }
+            var carbonModifiers: UInt32 = 0
+            if flags.contains(.command) { carbonModifiers |= 256 }
+            if flags.contains(.shift) { carbonModifiers |= 512 }
+            if flags.contains(.option) { carbonModifiers |= 2_048 }
+            if flags.contains(.control) { carbonModifiers |= 4_096 }
+            let key = event.keyCode == 49 ? "Space" : (event.charactersIgnoringModifiers?.uppercased() ?? "Key \(event.keyCode)")
+            let label = "\(flags.contains(.control) ? "⌃" : "")\(flags.contains(.option) ? "⌥" : "")\(flags.contains(.shift) ? "⇧" : "")\(flags.contains(.command) ? "⌘" : "")\(key)"
+            onRecord?(UInt32(event.keyCode), carbonModifiers, label)
+            finishRecording()
+        }
+
+        private func finishRecording() { recording = false; window?.makeFirstResponder(nil) }
+    }
 }

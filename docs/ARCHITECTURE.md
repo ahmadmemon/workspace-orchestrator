@@ -19,7 +19,7 @@ flowchart TD
 
 - `SceneCore` imports Foundation only. It owns stable Codable schemas, validation, V1-to-V2 migration, archives, run state/history, process approvals, and redaction.
 - `OrchestrationEngine` is platform-neutral. It schedules a validated DAG deterministically with bounded parallelism, dependencies, conditions, retries, health checks, failure policies, cancellation, and deactivation.
-- `MacAutomation` owns Foundation/AppKit/ApplicationServices/Network/Security/ServiceManagement/UserNotifications effects. Application, URL, file, process, health, Keychain, window, login, and notification effects sit behind mockable protocols.
+- `MacAutomation` owns Foundation/AppKit/ApplicationServices/Network/Security/ServiceManagement/UserNotifications effects. Application, URL, file, process, health, Keychain, window, login, notification, and update-check effects sit behind mockable protocols.
 - `WorkspaceIntegrations` discovers supported local tools and translates typed scene actions into executable-plus-argument requests. It never accepts a shell string.
 - `ActivationKit` isolates Carbon hotkeys, AVFoundation audio features, Speech parsing, and synthesised status. Services are opt-in and local.
 - `WorkspaceOrchestratorApp` owns `@MainActor` observable state, navigation, presentation, confirmation, and permission prompts. Views do not instantiate `Process` or call `NSWorkspace`.
@@ -41,7 +41,7 @@ Live snapshots and completed run records are written separately from scene defin
 - HTTP checks use normal platform TLS validation. TCP and all polling checks have explicit timeouts and bounded intervals.
 - Window control is isolated behind Accessibility permission and uses reviewed normalized placement data.
 - Clap and speech services start only after explicit enablement and expose their active state.
-- No telemetry, cloud API, account, remote control, arbitrary plug-in loading, or auto-update code is present in V1.
+- No telemetry, account, remote control, arbitrary plug-in loading, or self-update code is present in V1. The optional launch-time update check reads only the latest tag from the official GitHub Releases API; it sends no workspace data and never downloads or installs a release.
 
 ## Concurrency and recovery
 

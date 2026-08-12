@@ -95,6 +95,7 @@ public enum SceneValidator {
             issues += validateProcess(executable: value.executable, arguments: value.arguments, workingDirectory: value.workingDirectory, environment: value.environment, path: path)
             if blank(value.singleInstanceKey) { issues.append(.init(path: "\(path).singleInstanceKey", message: "Managed processes require a stable single-instance key.")) }
             if value.gracefulStopSeconds <= 0 || value.gracefulStopSeconds > 120 { issues.append(.init(path: "\(path).gracefulStopSeconds", message: "Graceful stop must be between 0 and 120 seconds.")) }
+            if value.forcedStopSeconds <= 0 || value.forcedStopSeconds > 60 { issues.append(.init(path: "\(path).forcedStopSeconds", message: "Forced stop must be between 0 and 60 seconds.")) }
         case .wait(let value):
             if value.durationSeconds <= 0 || value.durationSeconds > 3_600 { issues.append(.init(path: "\(path).durationSeconds", message: "Wait duration must be between 0 and 3600 seconds.")) }
         case .editorWorkspace(let value):

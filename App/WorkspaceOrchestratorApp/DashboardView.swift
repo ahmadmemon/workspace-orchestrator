@@ -88,12 +88,12 @@ private struct InterruptedRunBanner: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Interrupted workspace detected").font(.headline)
                 Text("\(run.sceneName) did not reach a terminal state. Workspace Orchestrator left all resources untouched.").foregroundStyle(ObsidianTokens.secondaryText)
-                Text("Only managed resources recorded as created by this run are eligible for Stop Owned Resources.").font(.caption).foregroundStyle(ObsidianTokens.mutedText)
+                Text("Stop Resources follows the explicit ownership policy in Settings; the safe default includes only resources created by this run.").font(.caption).foregroundStyle(ObsidianTokens.mutedText)
             }
             Spacer()
             Button("Dismiss") { model.dismissInterruptedRun() }
-            Button("Stop Owned Resources", role: .destructive) { Task { await model.stopInterruptedResources() } }
-                .disabled(!run.resources.contains { $0.kind == "managedProcess" && $0.ownership == .created })
+            Button("Stop Resources", role: .destructive) { Task { await model.stopInterruptedResources() } }
+                .disabled(!model.canStopInterruptedResources)
             Button("Retry Scene") { model.retryInterruptedRun() }.buttonStyle(.borderedProminent)
         }
         .obsidianPanel()

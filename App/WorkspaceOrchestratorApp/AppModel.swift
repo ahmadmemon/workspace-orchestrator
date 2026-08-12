@@ -2,6 +2,7 @@ import ActivationKit
 import AppKit
 import Foundation
 import MacAutomation
+import OSLog
 import SceneCore
 import WorkspaceIntegrations
 
@@ -30,8 +31,19 @@ struct HistoricalRunPreview: Identifiable {
     let blockingIssues: [String]
 }
 
+struct FactoryResetScope: Equatable {
+    var settings = true
+    var scenes = true
+    var history = true
+    var keychainSecrets = false
+    var windowLayouts = false
+    var approvals = true
+    var hasSelection: Bool { settings || scenes || history || keychainSecrets || windowLayouts || approvals }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
+    private static let diagnosticLogger = Logger(subsystem: "com.ahmadmemon.WorkspaceOrchestrator", category: "diagnostics")
     @Published private(set) var scenes: [Scene] = []
     @Published private(set) var currentRun: SceneRunResult?
     @Published private(set) var runHistory: [SceneRunResult] = []
@@ -64,6 +76,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var voiceAmbiguousScenes: [String] = []
     @Published private(set) var launchAtLoginStatus: LaunchAtLoginStatus = .disabled
     @Published private(set) var notificationPermissionStatus: PermissionState = .notDetermined
+    @Published private(set) var latestAvailableVersion: String?
+    @Published private(set) var updateCheckStatus = "Not checked"
 
     let accessibilityPermission: any AccessibilityPermissionManaging
     let hotKeyController = GlobalHotKeyController()
@@ -76,24 +90,27 @@ final class AppModel: ObservableObject {
     private let keychainStore: any KeychainStoring
     private let launchAtLoginManager: any LaunchAtLoginManaging
     private let notificationManager: any LocalNotificationManaging
+    private let updateChecker: any UpdateChecking
     private let uiTesting: Bool
     private var runTask: Task<Void, Never>?
     private var clapListener: LocalClapListener?
     private var voiceSessionID: UUID?
 
     static let preferenceKeys = [
-        "appearanceMode", "notificationsEnabled", "spokenStatusEnabled", "voiceEnabled", "reduceCustomEffects", "compactRows", "soundEffectsEnabled",
-        "hotKeySelection", "hotKeyLabel", "hotKeyCode", "hotKeyModifiers", "clapEnabled", "clapSensitivity", "clapAction", "clapRequiresConfirmation", "clapTestSoundEnabled",
-        "voiceLocaleIdentifier", "voiceActivationPhrase", "defaultSceneID", "menuBarPrimaryAction",
-        "executionDefaultConcurrency", "executionDefaultTimeout", "executionRetryStrategy", "executionRetryAttempts", "executionRetryDelay", "executionFailurePolicy", "managedProcessGraceSeconds",
-        "historyRetentionDays", "historyMaximumRunCount", "historyOutputEnabled", "historyMaximumOutputBytes"
+        "appearanceMode", "effectIntensity", "workspaceCoreAnimationIntensity", "notificationsEnabled", "spokenStatusEnabled", "spokenStatusDetailLevel", "voiceEnabled", "reduceCustomEffects", "compactRows", "soundEffectsEnabled", "soundEffectsVolume",
+        "hotKeySelection", "hotKeyLabel", "hotKeyCode", "hotKeyModifiers", "globalShortcutTarget", "globalShortcutFavoriteSceneID", "clapEnabled", "clapSensitivity", "clapAction", "clapRequiresConfirmation", "clapCooldown", "clapTestSoundEnabled",
+        "voiceLocaleIdentifier", "voiceActivationPhrase", "voiceMatchConfirmationPolicy", "defaultSceneID", "menuBarPrimaryAction", "menuBarFavoriteLimit", "menuBarShowRecentScenes", "menuBarShowCurrentRun", "openDashboardAtLaunch", "reopenInterruptedRunAtLaunch", "checkForUpdatesAtLaunch",
+        "executionDefaultConcurrency", "executionDefaultTimeout", "executionRetryStrategy", "executionRetryAttempts", "executionRetryDelay", "executionFailurePolicy", "managedProcessGraceSeconds", "managedProcessForcedStopSeconds", "executionDefaultOutputRetention", "executionDefaultHealthInterval", "executionDefaultHealthAttempts", "executionDefaultOwnershipPolicy", "processApprovalBehavior",
+        "historyRetentionDays", "historyMaximumRunCount", "historyOutputEnabled", "historyMaximumOutputBytes", "advancedDiagnosticLogging"
     ]
 
     var isRunning: Bool { currentRun?.status.isActive == true }
     var favoriteScenes: [Scene] { scenes.filter(\.favorite) }
     var recentScenes: [Scene] { let ids = runHistory.map(\.sceneID); return scenes.sorted { (ids.firstIndex(of: $0.id) ?? .max) < (ids.firstIndex(of: $1.id) ?? .max) }.prefix(5).map { $0 } }
+    var canStopManagedResources: Bool { currentRun?.resources.contains(where: shouldStopResource) == true }
+    var canStopInterruptedResources: Bool { interruptedRun?.resources.contains(where: shouldStopResource) == true }
 
-    init(store: (any SceneStoring)? = nil, executor: SceneExecutor? = nil, historyStore: (any RunHistoryStoring)? = nil, keychain: (any KeychainStoring)? = nil) {
+    init(store: (any SceneStoring)? = nil, executor: SceneExecutor? = nil, historyStore: (any RunHistoryStoring)? = nil, keychain: (any KeychainStoring)? = nil, updateChecker: (any UpdateChecking)? = nil) {
         let arguments = ProcessInfo.processInfo.arguments
         let uiTesting = arguments.contains("--ui-testing")
         self.uiTesting = uiTesting
@@ -114,6 +131,7 @@ final class AppModel: ObservableObject {
             let secrets = keychain ?? UITestKeychainStore(); keychainStore = secrets
             launchAtLoginManager = UITestLaunchAtLoginManager()
             notificationManager = UITestNotificationManager()
+            self.updateChecker = updateChecker ?? UITestUpdateChecker()
             let runner = UITestProcessRunner()
             self.executor = executor ?? SceneExecutor(applicationOpener: UITestApplicationOpener(), urlOpener: UITestURLOpener(), processRunner: runner, fileOpener: UITestFileOpener(), managedProcesses: managed, keychain: secrets, windowController: windows, approvalAuthorizer: approvals)
         } else {
@@ -129,16 +147,18 @@ final class AppModel: ObservableObject {
             let secrets = keychain ?? SystemKeychainStore(); keychainStore = secrets
             launchAtLoginManager = SystemLaunchAtLoginManager()
             notificationManager = SystemLocalNotificationManager()
+            self.updateChecker = updateChecker ?? GitHubReleaseUpdateChecker()
             let runner = FoundationProcessRunner()
             self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: secrets, windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner), additionalHealthChecker: DockerIntegrationHealthChecker(processRunner: runner))
         }
         spokenStatus.enabled = UserDefaults.standard.bool(forKey: "spokenStatusEnabled")
+        spokenStatus.detailLevel = SpokenStatusDetailLevel(rawValue: UserDefaults.standard.string(forKey: "spokenStatusDetailLevel") ?? "concise") ?? .concise
         if uiTesting {
             if arguments.contains("--reset-onboarding") { UserDefaults.standard.removeObject(forKey: "onboardingCompleted") }
             else { UserDefaults.standard.set(true, forKey: "onboardingCompleted"); onboardingPresented = false }
         }
         if !uiTesting { configureGlobalHotKey() }
-        Task { await self.historyStore.updateRetention(persistedRetention); await refresh() }
+        Task { await self.historyStore.updateRetention(persistedRetention); await refresh(); await checkForUpdatesIfEnabled() }
     }
 
     func refresh() async { if uiTesting, ProcessInfo.processInfo.arguments.contains("--seed-ui-fixtures") { await seedUITestFixtures() }; await loadScenes(); await loadHistory(); await loadKeychainReferences(); integrations = await integrationDiscovery.discover(); refreshCapturableApplications(); launchAtLoginStatus = launchAtLoginManager.status(); notificationPermissionStatus = await notificationManager.permissionStatus() }
@@ -159,7 +179,8 @@ final class AppModel: ObservableObject {
             corruptHistoryFiles = try await historyStore.corruptFileNames()
             historyStorageBytes = try await historyStore.storageUsageBytes()
             let dismissed = Set(UserDefaults.standard.stringArray(forKey: "dismissedInterruptedRunIDs") ?? [])
-            interruptedRun = runHistory.first { $0.status == .interrupted && !dismissed.contains($0.id) }
+            let reopenRecovery = UserDefaults.standard.object(forKey: "reopenInterruptedRunAtLaunch") as? Bool ?? true
+            interruptedRun = reopenRecovery ? runHistory.first { $0.status == .interrupted && !dismissed.contains($0.id) } : nil
         } catch { presentedError = error.localizedDescription }
     }
     func save(_ scene: Scene) async -> Bool { var updated = scene; updated.updatedAt = Date(); do { try SceneValidator.validate(updated); try await store.save(updated); await loadScenes(); return true } catch { presentedError = error.localizedDescription; return false } }
@@ -190,8 +211,10 @@ final class AppModel: ObservableObject {
         do {
             var unapproved: [SceneAction] = []
             let actions = deactivating ? scene.deactivationActions : scene.actions
+            let alwaysAsk = UserDefaults.standard.string(forKey: "processApprovalBehavior") == "askEveryRun"
             for action in actions where action.requiresProcessApproval {
-                if !(try await approvalStore.isApproved(action)) { unapproved.append(action) }
+                if alwaysAsk { unapproved.append(action) }
+                else if !(try await approvalStore.isApproved(action)) { unapproved.append(action) }
             }
             if scene.trustState == .importedUntrusted || !unapproved.isEmpty {
                 processApprovalRequest = .init(scene: scene, actions: unapproved, requiresImportTrustReview: scene.trustState == .importedUntrusted, deactivating: deactivating)
@@ -216,12 +239,17 @@ final class AppModel: ObservableObject {
         Task { await prepareToRun(scene, deactivating: true) }
     }
     func stopManagedResources() async {
-        guard let run = currentRun else { return }; for resource in run.resources where resource.kind == "managedProcess" && resource.ownership == .created { try? await managedProcesses.stop(identifier: resource.identifier, graceSeconds: 5) }
+        guard let run = currentRun else { return }
+        for resource in run.resources where shouldStopResource(resource) {
+            let durations = managedStopDurations(for: resource, in: run)
+            try? await managedProcesses.stop(identifier: resource.identifier, graceSeconds: durations.grace, forcedStopSeconds: durations.forced)
+        }
     }
     func stopInterruptedResources() async {
         guard let run = interruptedRun else { return }
-        for resource in run.resources where resource.kind == "managedProcess" && resource.ownership == .created {
-            do { try await managedProcesses.stop(identifier: resource.identifier, graceSeconds: 5) }
+        for resource in run.resources where shouldStopResource(resource) {
+            let durations = managedStopDurations(for: resource, in: run)
+            do { try await managedProcesses.stop(identifier: resource.identifier, graceSeconds: durations.grace, forcedStopSeconds: durations.forced) }
             catch { presentedError = error.localizedDescription; return }
         }
         dismissInterruptedRun()
@@ -367,9 +395,10 @@ final class AppModel: ObservableObject {
             Task { [weak self] in try? await Task.sleep(for: .seconds(configuration.timeoutSeconds)); guard let self, self.voiceSessionID == sessionID, self.voiceListening else { return }; self.finishVoiceCommand(self.voiceTranscript) }
         } catch { voiceListening = false; presentedError = error.localizedDescription }
     }
-    func cancelVoiceCommand() { voiceRecognizer.stop(); voiceSessionID = nil; voiceListening = false; voicePanelPresented = false }
-    func confirmVoiceScene(named name: String) { voiceRecognizer.stop(); voiceSessionID = nil; voiceListening = false; voicePanelPresented = false; if let scene = scenes.first(where: { $0.name == name }) { run(scene) } }
+    func cancelVoiceCommand() { voiceRecognizer.stop(); voiceSessionID = nil; voiceListening = false; voicePanelPresented = false; voiceTranscript = ""; voiceSuggestedScene = nil; voiceAmbiguousScenes = [] }
+    func confirmVoiceScene(named name: String) { voiceRecognizer.stop(); voiceSessionID = nil; voiceListening = false; voicePanelPresented = false; voiceTranscript = ""; voiceSuggestedScene = nil; voiceAmbiguousScenes = []; if let scene = scenes.first(where: { $0.name == name }) { run(scene) } }
     func setSpokenStatusEnabled(_ enabled: Bool) { spokenStatus.enabled = enabled; UserDefaults.standard.set(enabled, forKey: "spokenStatusEnabled") }
+    func setSpokenStatusDetailLevel(_ rawValue: String) { spokenStatus.detailLevel = SpokenStatusDetailLevel(rawValue: rawValue) ?? .concise; UserDefaults.standard.set(rawValue, forKey: "spokenStatusDetailLevel") }
     func setLaunchAtLogin(_ enabled: Bool) {
         do { try launchAtLoginManager.setEnabled(enabled); launchAtLoginStatus = launchAtLoginManager.status() }
         catch { presentedError = error.localizedDescription; launchAtLoginStatus = launchAtLoginManager.status() }
@@ -403,9 +432,23 @@ final class AppModel: ObservableObject {
         do { keychainReferenceIDs = try await keychainStore.listIDs() }
         catch { presentedError = error.localizedDescription }
     }
+    var allKnownSecretReferenceIDs: [String] {
+        let referenced = scenes.flatMap { scene in
+            (scene.actions + scene.deactivationActions).flatMap { action -> [String] in
+                switch action {
+                case .runProcess(let value): return value.environment.values.compactMap { if case .secretReference(let id) = $0 { id } else { nil } }
+                case .managedProcess(let value): return value.environment.values.compactMap { if case .secretReference(let id) = $0 { id } else { nil } }
+                default: return []
+                }
+            }
+        }
+        return Array(Set(keychainReferenceIDs + referenced)).sorted()
+    }
+    func secretReferenceUsages(id: String) -> [SecretReferenceUsage] { scenes.flatMap { $0.secretReferenceUsages(id: id) } }
+    func keychainReferenceExists(id: String) -> Bool { keychainReferenceIDs.contains(id) }
     func createKeychainReference(id: String, secret: String) async -> Bool {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !secret.isEmpty else { presentedError = "A reference identifier and secret value are required."; return false }
+        guard validSecretLabel(trimmed), !secret.isEmpty else { presentedError = "Enter a label of 1–128 printable characters and a secret value."; return false }
         do { try await keychainStore.create(id: trimmed, value: Data(secret.utf8)); await loadKeychainReferences(); return true }
         catch { presentedError = error.localizedDescription; return false }
     }
@@ -413,6 +456,33 @@ final class AppModel: ObservableObject {
         guard !secret.isEmpty else { presentedError = "Enter a replacement secret value. Stored values are never revealed."; return false }
         do { try await keychainStore.update(id: id, value: Data(secret.utf8)); await loadKeychainReferences(); return true }
         catch { presentedError = error.localizedDescription; return false }
+    }
+    func repairKeychainReference(id: String, secret: String) async -> Bool {
+        guard !id.isEmpty, !secret.isEmpty else { presentedError = "Choose a missing reference and enter its replacement value."; return false }
+        guard !keychainReferenceIDs.contains(id) else { presentedError = "That reference already exists. Use Replace Secret Value instead."; return false }
+        do { try await keychainStore.create(id: id, value: Data(secret.utf8)); await loadKeychainReferences(); return true }
+        catch { presentedError = error.localizedDescription; return false }
+    }
+    func renameKeychainReference(from oldID: String, to proposedID: String) async -> Bool {
+        let newID = proposedID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !oldID.isEmpty, validSecretLabel(newID), oldID != newID else { presentedError = "Choose an existing reference and enter a different label of 1–128 printable characters."; return false }
+        guard !allKnownSecretReferenceIDs.contains(newID) else { presentedError = "A secret reference with that label already exists."; return false }
+        do {
+            let value = try await keychainStore.read(id: oldID)
+            try await keychainStore.create(id: newID, value: value)
+            for var scene in scenes where !scene.secretReferenceUsages(id: oldID).isEmpty {
+                scene = scene.replacingSecretReference(from: oldID, to: newID)
+                scene.updatedAt = Date()
+                try await store.save(scene)
+            }
+            try await keychainStore.delete(id: oldID)
+            await loadScenes(); await loadKeychainReferences()
+            return true
+        } catch {
+            presentedError = "The rename did not complete. Both labels are preserved when possible so scene references remain repairable. \(error.localizedDescription)"
+            await loadScenes(); await loadKeychainReferences()
+            return false
+        }
     }
     func deleteKeychainReference(id: String) async {
         do { try await keychainStore.delete(id: id); await loadKeychainReferences() }
@@ -463,7 +533,7 @@ final class AppModel: ObservableObject {
     }
     func updateGlobalHotKey(keyCode: UInt32, modifiers: UInt32, label: String) {
         let configuration = HotKeyConfiguration(keyCode: keyCode, modifiers: modifiers)
-        do { try hotKeyController.register(configuration) { [weak self] in self?.commandPalettePresented = true }; UserDefaults.standard.set(Int(keyCode), forKey: "hotKeyCode"); UserDefaults.standard.set(Int(modifiers), forKey: "hotKeyModifiers"); UserDefaults.standard.set(label, forKey: "hotKeyLabel") }
+        do { try hotKeyController.register(configuration) { [weak self] in self?.handleGlobalShortcut() }; UserDefaults.standard.set(Int(keyCode), forKey: "hotKeyCode"); UserDefaults.standard.set(Int(modifiers), forKey: "hotKeyModifiers"); UserDefaults.standard.set(label, forKey: "hotKeyLabel") }
         catch { presentedError = error.localizedDescription }
     }
     var diagnosticsReport: String {
@@ -484,6 +554,32 @@ final class AppModel: ObservableObject {
         """
     }
     func copyDiagnostics() { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(diagnosticsReport, forType: .string) }
+    func checkForUpdates() async {
+        updateCheckStatus = "Checking official GitHub Releases…"
+        do {
+            let latest = try await updateChecker.latestVersion()
+            latestAvailableVersion = latest
+            updateCheckStatus = latest == appVersion ? "Up to date (\(appVersion))" : "Latest release: \(latest); installed: \(appVersion)"
+        } catch { updateCheckStatus = "Update check failed: \(error.localizedDescription)" }
+    }
+    func checkForUpdatesIfEnabled() async {
+        guard UserDefaults.standard.bool(forKey: "checkForUpdatesAtLaunch") else { return }
+        await checkForUpdates()
+    }
+    func openApplicationSupport() { openLocalDirectory(applicationSupportDirectory) }
+    func openRunHistoryLocation() { openLocalDirectory(applicationSupportDirectory.appendingPathComponent("RunHistory", isDirectory: true)) }
+    func resetWindowLayoutData() async {
+        do {
+            for var scene in scenes {
+                let originalCount = scene.actions.count + scene.deactivationActions.count
+                scene.actions.removeAll { if case .windowLayout = $0 { true } else { false } }
+                scene.deactivationActions.removeAll { if case .windowLayout = $0 { true } else { false } }
+                if scene.actions.count + scene.deactivationActions.count != originalCount { scene.updatedAt = Date(); try await store.save(scene) }
+            }
+            capturedWindows = []
+            await loadScenes()
+        } catch { presentedError = error.localizedDescription }
+    }
     var executionDefaults: WorkspaceExecutionDefaults {
         let defaults = UserDefaults.standard
         let timeoutValue = defaults.object(forKey: "executionDefaultTimeout") as? Double ?? 0
@@ -496,7 +592,12 @@ final class AppModel: ObservableObject {
             timeoutSeconds: timeoutValue > 0 ? timeoutValue : nil,
             retryPolicy: retry,
             failurePolicy: FailurePolicy(rawValue: defaults.string(forKey: "executionFailurePolicy") ?? "stopScene") ?? .stopScene,
-            managedProcessGraceSeconds: defaults.object(forKey: "managedProcessGraceSeconds") as? Double ?? 5
+            managedProcessGraceSeconds: defaults.object(forKey: "managedProcessGraceSeconds") as? Double ?? 5,
+            managedProcessForcedStopSeconds: defaults.object(forKey: "managedProcessForcedStopSeconds") as? Double ?? 2,
+            outputRetention: OutputRetentionPolicy(rawValue: defaults.string(forKey: "executionDefaultOutputRetention") ?? "summary") ?? .summary,
+            healthCheckIntervalSeconds: defaults.object(forKey: "executionDefaultHealthInterval") as? Double ?? 1,
+            healthCheckMaximumAttempts: defaults.object(forKey: "executionDefaultHealthAttempts") as? Int ?? 10,
+            ownershipPolicy: DefaultOwnershipPolicy(rawValue: defaults.string(forKey: "executionDefaultOwnershipPolicy") ?? "createdOnly") ?? .createdOnly
         )
     }
     func exportSettings() throws -> Data {
@@ -519,6 +620,7 @@ final class AppModel: ObservableObject {
             await historyStore.updateRetention(Self.persistedHistoryRetention())
             configureGlobalHotKey()
             spokenStatus.enabled = defaults.bool(forKey: "spokenStatusEnabled")
+            spokenStatus.detailLevel = SpokenStatusDetailLevel(rawValue: defaults.string(forKey: "spokenStatusDetailLevel") ?? "concise") ?? .concise
             clapEnabled = defaults.bool(forKey: "clapEnabled")
             clapState = clapEnabled ? .paused(.restartRequiresResume) : .stopped
             await refresh()
@@ -527,20 +629,40 @@ final class AppModel: ObservableObject {
     func resetSettings() async {
         for key in Self.preferenceKeys { UserDefaults.standard.removeObject(forKey: key) }
         spokenStatus.enabled = false
+        spokenStatus.detailLevel = .concise
         clapListener?.stop(); clapListener = nil; clapListening = false; clapEnabled = false; clapState = .stopped
+        cancelVoiceCommand()
+        setLaunchAtLogin(false)
         await historyStore.updateRetention(Self.persistedHistoryRetention())
         configureGlobalHotKey()
         await refresh()
     }
-    func factoryReset() async {
-        cancelCurrentRun()
+    func resetAppearanceSettings() {
+        for key in ["appearanceMode", "effectIntensity", "workspaceCoreAnimationIntensity", "reduceCustomEffects", "compactRows", "soundEffectsEnabled", "soundEffectsVolume"] { UserDefaults.standard.removeObject(forKey: key) }
+    }
+    func resetActivationSettings() async {
+        for key in ["hotKeySelection", "hotKeyLabel", "hotKeyCode", "hotKeyModifiers", "globalShortcutTarget", "globalShortcutFavoriteSceneID", "clapEnabled", "clapSensitivity", "clapAction", "clapRequiresConfirmation", "clapCooldown", "clapTestSoundEnabled", "voiceEnabled", "voiceLocaleIdentifier", "voiceActivationPhrase", "voiceMatchConfirmationPolicy", "spokenStatusEnabled", "spokenStatusDetailLevel"] { UserDefaults.standard.removeObject(forKey: key) }
+        spokenStatus.enabled = false; spokenStatus.detailLevel = .concise
         clapListener?.stop(); clapListener = nil; clapListening = false; clapEnabled = false; clapState = .stopped
+        cancelVoiceCommand()
+        configureGlobalHotKey()
+    }
+    func factoryReset(scope: FactoryResetScope) async {
+        guard scope.hasSelection else { return }
+        if scope.scenes || scope.history { cancelCurrentRun() }
+        if scope.settings { clapListener?.stop(); clapListener = nil; clapListening = false; clapEnabled = false; clapState = .stopped }
         do {
-            try await historyStore.clear()
-            for scene in try await store.loadScenes() { try await store.deleteScene(id: scene.id) }
-            try await approvalStore.clearAll()
-            for key in Self.preferenceKeys + ["onboardingCompleted", "dismissedInterruptedRunIDs"] { UserDefaults.standard.removeObject(forKey: key) }
-            onboardingPresented = true
+            if scope.history { try await historyStore.clear() }
+            if scope.scenes { for scene in try await store.loadScenes() { try await store.deleteScene(id: scene.id) } }
+            else if scope.windowLayouts { await resetWindowLayoutData() }
+            if scope.approvals { try await approvalStore.clearAll() }
+            if scope.keychainSecrets { for id in try await keychainStore.listIDs() { try await keychainStore.delete(id: id) } }
+            if scope.settings {
+                for key in Self.preferenceKeys + ["onboardingCompleted", "dismissedInterruptedRunIDs"] { UserDefaults.standard.removeObject(forKey: key) }
+                cancelVoiceCommand()
+                setLaunchAtLogin(false)
+                onboardingPresented = true
+            }
             await historyStore.updateRetention(Self.persistedHistoryRetention())
             await refresh()
         } catch { presentedError = error.localizedDescription }
@@ -550,10 +672,14 @@ final class AppModel: ObservableObject {
     private func accept(_ update: SceneRunResult) async {
         let previousStatus = currentRun?.status
         currentRun = update
+        if UserDefaults.standard.bool(forKey: "advancedDiagnosticLogging") { Self.diagnosticLogger.info("Run state changed to \(update.status.rawValue, privacy: .public); actions=\(update.actionRecords.count, privacy: .public); warnings=\(update.warningCount, privacy: .public)") }
         do { try await historyStore.save(update) }
         catch { presentedError = error.localizedDescription }
         if previousStatus != update.status { spokenStatus.speak(sceneName: update.sceneName, status: update.status, warningCount: update.warningCount, failedAction: update.failedActionID.flatMap { id in update.actionRecords.first(where: { $0.id == id })?.name }) }
-        if previousStatus != update.status, UserDefaults.standard.bool(forKey: "soundEffectsEnabled"), [.ready, .readyWithWarnings, .failed].contains(update.status) { NSSound(named: "Glass")?.play() }
+        if previousStatus != update.status, UserDefaults.standard.bool(forKey: "soundEffectsEnabled"), [.ready, .readyWithWarnings, .failed].contains(update.status), let sound = NSSound(named: "Glass") {
+            sound.volume = Float(UserDefaults.standard.object(forKey: "soundEffectsVolume") as? Double ?? 0.5)
+            sound.play()
+        }
         if previousStatus != update.status, UserDefaults.standard.bool(forKey: "notificationsEnabled"), [.ready, .readyWithWarnings, .failed].contains(update.status) {
             do { try await notificationManager.notify(run: update) }
             catch { presentedError = error.localizedDescription }
@@ -562,8 +688,18 @@ final class AppModel: ObservableObject {
     private func configureGlobalHotKey() {
         let keyCode = UInt32(UserDefaults.standard.object(forKey: "hotKeyCode") as? Int ?? 49)
         let modifiers = UInt32(UserDefaults.standard.object(forKey: "hotKeyModifiers") as? Int ?? 2_304)
-        do { try hotKeyController.register(.init(keyCode: keyCode, modifiers: modifiers)) { [weak self] in self?.commandPalettePresented = true } }
+        do { try hotKeyController.register(.init(keyCode: keyCode, modifiers: modifiers)) { [weak self] in self?.handleGlobalShortcut() } }
         catch { presentedError = error.localizedDescription }
+    }
+    private func handleGlobalShortcut() {
+        switch UserDefaults.standard.string(forKey: "globalShortcutTarget") ?? "commandPalette" {
+        case "scenePicker": selectedSection = .scenes
+        case "favoriteScene":
+            let id = UserDefaults.standard.string(forKey: "globalShortcutFavoriteSceneID") ?? ""
+            if let scene = favoriteScenes.first(where: { $0.id == id }) { run(scene) }
+            else { presentedError = "Choose an available favorite scene for the global shortcut." }
+        default: commandPalettePresented = true
+        }
     }
     private static func persistedHistoryRetention() -> RunHistoryRetention {
         let defaults = UserDefaults.standard
@@ -579,10 +715,11 @@ final class AppModel: ObservableObject {
         let stringOptions: [String: Set<String>] = [
             "appearanceMode": ["Obsidian", "System"], "hotKeySelection": ["optionCommandSpace", "controlOptionSpace", "shiftCommandSpace"],
             "clapAction": ["showCommandPalette", "runDefaultScene"], "menuBarPrimaryAction": ["openDashboard", "showCommandPalette", "runDefaultScene"],
-            "executionRetryStrategy": Set(RetryStrategy.allCases.map(\.rawValue)), "executionFailurePolicy": Set(FailurePolicy.allCases.map(\.rawValue))
+            "globalShortcutTarget": ["commandPalette", "scenePicker", "favoriteScene"], "voiceMatchConfirmationPolicy": ["confirmFuzzyAndAmbiguous", "confirmAmbiguousOnly"], "spokenStatusDetailLevel": ["concise", "detailed"],
+            "executionRetryStrategy": Set(RetryStrategy.allCases.map(\.rawValue)), "executionFailurePolicy": Set(FailurePolicy.allCases.map(\.rawValue)), "executionDefaultOutputRetention": Set(OutputRetentionPolicy.allCases.map(\.rawValue)), "executionDefaultOwnershipPolicy": Set(DefaultOwnershipPolicy.allCases.map(\.rawValue)), "processApprovalBehavior": ["rememberExact", "askEveryRun"]
         ]
-        let freeStrings: Set<String> = ["hotKeyLabel", "voiceLocaleIdentifier", "voiceActivationPhrase", "defaultSceneID"]
-        let booleans: Set<String> = ["notificationsEnabled", "spokenStatusEnabled", "voiceEnabled", "reduceCustomEffects", "compactRows", "soundEffectsEnabled", "clapEnabled", "clapRequiresConfirmation", "clapTestSoundEnabled", "historyOutputEnabled"]
+        let freeStrings: Set<String> = ["hotKeyLabel", "voiceLocaleIdentifier", "voiceActivationPhrase", "defaultSceneID", "globalShortcutFavoriteSceneID"]
+        let booleans: Set<String> = ["notificationsEnabled", "spokenStatusEnabled", "voiceEnabled", "reduceCustomEffects", "compactRows", "soundEffectsEnabled", "clapEnabled", "clapRequiresConfirmation", "clapTestSoundEnabled", "historyOutputEnabled", "menuBarShowRecentScenes", "menuBarShowCurrentRun", "openDashboardAtLaunch", "reopenInterruptedRunAtLaunch", "checkForUpdatesAtLaunch", "advancedDiagnosticLogging"]
         if let options = stringOptions[key], let string = value as? String, options.contains(string) { return string }
         if freeStrings.contains(key), let string = value as? String, string.count <= 512 { return string }
         if booleans.contains(key), let boolean = value as? Bool { return boolean }
@@ -594,10 +731,16 @@ final class AppModel: ObservableObject {
             case "historyRetentionDays": return min(max(number.intValue, 1), 365)
             case "historyMaximumRunCount": return min(max(number.intValue, 10), 5_000)
             case "historyMaximumOutputBytes": return [8_192, 32_768, 131_072, 524_288].contains(number.intValue) ? number.intValue : nil
+            case "menuBarFavoriteLimit": return min(max(number.intValue, 1), 10)
+            case "executionDefaultHealthAttempts": return min(max(number.intValue, 1), 100)
             case "clapSensitivity": return min(max(number.doubleValue, 0.1), 1)
+            case "clapCooldown": return min(max(number.doubleValue, 0.5), 30)
+            case "effectIntensity", "workspaceCoreAnimationIntensity", "soundEffectsVolume": return min(max(number.doubleValue, 0), 1)
             case "executionDefaultTimeout": return min(max(number.doubleValue, 0), 86_400)
             case "executionRetryDelay": return min(max(number.doubleValue, 0), 3_600)
             case "managedProcessGraceSeconds": return min(max(number.doubleValue, 0.1), 300)
+            case "managedProcessForcedStopSeconds": return min(max(number.doubleValue, 0.1), 60)
+            case "executionDefaultHealthInterval": return min(max(number.doubleValue, 0.1), 300)
             default: break
             }
         }
@@ -610,18 +753,22 @@ final class AppModel: ObservableObject {
         case .runScene(let query):
             switch VoiceCommandParser.match(sceneQuery: query, sceneNames: scenes.map(\.name)) {
             case .exact(let name): confirmVoiceScene(named: name)
-            case .suggested(let name, _): voiceSuggestedScene = name
+            case .suggested(let name, _):
+                if UserDefaults.standard.string(forKey: "voiceMatchConfirmationPolicy") == "confirmAmbiguousOnly" { confirmVoiceScene(named: name) }
+                else { voiceSuggestedScene = name }
             case .ambiguous(let names): voiceAmbiguousScenes = names
             case .none: presentedError = "No scene matched “\(query)”."
             }
-        case .stopCurrent: voicePanelPresented = false; stopCurrentScene()
-        case .cancelCurrent: voicePanelPresented = false; cancelCurrentRun()
-        case .showDashboard: voicePanelPresented = false; selectedSection = .dashboard
-        case .showScenes: voicePanelPresented = false; selectedSection = .scenes
-        case .showHistory: voicePanelPresented = false; selectedSection = .history
+        case .stopCurrent: clearFinishedVoiceSession(); stopCurrentScene()
+        case .cancelCurrent: clearFinishedVoiceSession(); cancelCurrentRun()
+        case .showDashboard: clearFinishedVoiceSession(); selectedSection = .dashboard
+        case .showScenes: clearFinishedVoiceSession(); selectedSection = .scenes
+        case .showHistory: clearFinishedVoiceSession(); selectedSection = .history
         case .unknown: presentedError = "The voice command was not recognized."
         }
     }
+
+    private func clearFinishedVoiceSession() { voicePanelPresented = false; voiceTranscript = ""; voiceSuggestedScene = nil; voiceAmbiguousScenes = [] }
 
     private func missingSecretIssues(actionName: String, environment: [String: EnvironmentValue]) async -> [String] {
         var issues: [String] = []
@@ -633,11 +780,38 @@ final class AppModel: ObservableObject {
         return issues
     }
 
+    private func validSecretLabel(_ value: String) -> Bool { !value.isEmpty && value.count <= 128 && value.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) } }
+
+    private func shouldStopResource(_ resource: ResourceRecord) -> Bool {
+        guard resource.kind == "managedProcess" else { return false }
+        let policy = DefaultOwnershipPolicy(rawValue: UserDefaults.standard.string(forKey: "executionDefaultOwnershipPolicy") ?? "createdOnly") ?? .createdOnly
+        return resource.ownership == .created || (policy == .includeAdopted && resource.ownership == .adopted)
+    }
+
+    private func managedStopDurations(for resource: ResourceRecord, in run: SceneRunResult) -> (grace: Double, forced: Double) {
+        let snapshotActions = run.sceneSnapshot.map { $0.actions + $0.deactivationActions } ?? []
+        let action = snapshotActions.first { $0.id == resource.actionID }
+        if let action, case .managedProcess(let managed) = action { return (managed.gracefulStopSeconds, managed.forcedStopSeconds) }
+        let defaults = executionDefaults
+        return (defaults.managedProcessGraceSeconds, defaults.managedProcessForcedStopSeconds)
+    }
+
+    private var applicationSupportDirectory: URL {
+        (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory)
+            .appendingPathComponent("WorkspaceOrchestrator", isDirectory: true)
+    }
+
+    private func openLocalDirectory(_ url: URL) {
+        do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true); NSWorkspace.shared.open(url) }
+        catch { presentedError = error.localizedDescription }
+    }
+
     private func makeClapListener() -> LocalClapListener {
         let defaults = UserDefaults.standard
         let sensitivity = defaults.object(forKey: "clapSensitivity") as? Double ?? 0.65
+        let cooldown = defaults.object(forKey: "clapCooldown") as? Double ?? 2.5
         let action: ActivationAction = defaults.string(forKey: "clapAction") == "runDefaultScene" ? .favoriteWithConfirmation : .commandPalette
-        let configuration = ClapConfiguration(enabled: true, sensitivity: sensitivity, action: action)
+        let configuration = ClapConfiguration(enabled: true, sensitivity: sensitivity, cooldown: cooldown, action: action)
         return LocalClapListener(configuration: configuration) { [weak self] in
             self?.handleClapActivation()
         } onStateChange: { [weak self] state in
@@ -722,7 +896,7 @@ private struct UITestProcessRunner: ProcessRunning {
 }
 private actor UITestManagedProcessController: ManagedProcessControlling {
     func start(_ action: ManagedProcessAction, environment: [String: String]) async throws -> ResourceRecord { .init(actionID: action.id, kind: "managedProcess", identifier: action.singleInstanceKey, ownership: .created) }
-    func stop(identifier: String, graceSeconds: Double) async throws {}
+    func stop(identifier: String, graceSeconds: Double, forcedStopSeconds: Double) async throws {}
     func snapshot(identifier: String) async -> ManagedProcessSnapshot? { nil }
 }
 private struct UITestAccessibilityPermissionManager: AccessibilityPermissionManaging {
@@ -750,6 +924,7 @@ private struct UITestNotificationManager: LocalNotificationManaging {
     func requestPermission() async throws -> Bool { false }
     func notify(run: SceneRunResult) async throws {}
 }
+private struct UITestUpdateChecker: UpdateChecking { func latestVersion() async throws -> String { "1.0.0-rc.1" } }
 private actor UITestProcessApprovalAuthorizer: ProcessApprovalAuthorizing {
     func isApproved(_ action: SceneAction) async throws -> Bool { true }
     func approve(_ action: SceneAction, scope: ProcessApprovalScope) async throws {}

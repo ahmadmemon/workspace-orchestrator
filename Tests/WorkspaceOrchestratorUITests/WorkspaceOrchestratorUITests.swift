@@ -77,6 +77,16 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Copy Structured Preview"].waitForExistence(timeout: 5))
     }
 
+    func testSettingsExposePersistedGeneralControls() throws {
+        let app = launch(["--seed-ui-fixtures"])
+        app.typeKey(",", modifierFlags: .command)
+
+        XCTAssertTrue(app.descendants(matching: .any)["screen.settings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["Open Dashboard at launch"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["Reopen interrupted-run recovery at launch"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Check for Updates Now"].exists)
+    }
+
     private func launch(_ arguments: [String]) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"] + arguments

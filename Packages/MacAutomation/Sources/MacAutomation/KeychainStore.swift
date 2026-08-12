@@ -7,9 +7,21 @@ public protocol KeychainStoring: Sendable {
     func read(id: String) async throws -> Data
     func delete(id: String) async throws
     func listIDs() async throws -> [String]
+    func rename(from oldID: String, to newID: String) async throws
 }
 
-public extension KeychainStoring { func listIDs() async throws -> [String] { [] } }
+public extension KeychainStoring {
+    func listIDs() async throws -> [String] { [] }
+    func rename(from oldID: String, to newID: String) async throws {
+        let value = try await read(id: oldID)
+        try await create(id: newID, value: value)
+        do { try await delete(id: oldID) }
+        catch {
+            try? await delete(id: newID)
+            throw error
+        }
+    }
+}
 
 public enum KeychainStoreError: LocalizedError, Equatable {
     case duplicate; case notFound; case unexpectedStatus(Int32)

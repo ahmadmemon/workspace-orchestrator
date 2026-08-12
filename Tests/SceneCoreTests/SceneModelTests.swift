@@ -96,6 +96,13 @@ final class SceneModelTests: XCTestCase {
         XCTAssertEqual(configuration.conditionEvaluationMode, .all)
         XCTAssertTrue(configuration.disabledConditionIndexes.isEmpty)
     }
+
+    func testManagedProcessWithoutForcedStopFieldUsesSafeDefault() throws {
+        let json = #"{"type":"managedProcess","id":"managed","executable":"/bin/sleep","arguments":["1"],"environment":{},"singleInstanceKey":"managed","restartPolicy":"never","gracefulStopSeconds":5,"configuration":{"enabled":true,"dependencies":[],"retryPolicy":{"strategy":"none","maximumAttempts":1,"initialDelaySeconds":1,"maximumDelaySeconds":30,"maximumTotalDurationSeconds":120,"jitterFraction":0,"retryableCategories":[]},"failurePolicy":"stopScene","idempotencyPolicy":"singleInstance","conditions":[],"healthChecks":[],"outputRetention":"summary"}}"#
+        let action = try decoder.decode(SceneAction.self, from: Data(json.utf8))
+        guard case .managedProcess(let managed) = action else { return XCTFail("Expected managed process") }
+        XCTAssertEqual(managed.forcedStopSeconds, 2)
+    }
 }
 
 enum TestFixtures {

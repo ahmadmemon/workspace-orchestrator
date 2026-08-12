@@ -95,11 +95,13 @@ final class ProcessApprovalStoreTests: XCTestCase {
         var retryConfiguration = originalConfiguration; retryConfiguration.retryPolicy.maximumAttempts = 3
         let retry = SceneAction.managedProcess(.init(id: "server", executable: "/usr/bin/yes", arguments: ["ok"], workingDirectory: "/tmp", singleInstanceKey: "server", gracefulStopSeconds: 5, configuration: retryConfiguration))
         let stop = SceneAction.managedProcess(.init(id: "server", executable: "/usr/bin/yes", arguments: ["ok"], workingDirectory: "/tmp", singleInstanceKey: "server", gracefulStopSeconds: 9, configuration: originalConfiguration))
+        let forcedStop = SceneAction.managedProcess(.init(id: "server", executable: "/usr/bin/yes", arguments: ["ok"], workingDirectory: "/tmp", singleInstanceKey: "server", gracefulStopSeconds: 5, forcedStopSeconds: 8, configuration: originalConfiguration))
 
         XCTAssertNotEqual(try ApprovalFingerprint.make(for: directory), originalFingerprint)
         XCTAssertNotEqual(try ApprovalFingerprint.make(for: timeout), originalFingerprint)
         XCTAssertNotEqual(try ApprovalFingerprint.make(for: retry), originalFingerprint)
         XCTAssertNotEqual(try ApprovalFingerprint.make(for: stop), originalFingerprint)
+        XCTAssertNotEqual(try ApprovalFingerprint.make(for: forcedStop), originalFingerprint)
     }
 
     private func makeStore() -> JSONProcessApprovalStore {

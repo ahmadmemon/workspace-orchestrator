@@ -7,14 +7,20 @@ struct MenuBarContentView: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage("menuBarPrimaryAction") private var primaryAction = "openDashboard"
     @AppStorage("defaultSceneID") private var defaultSceneID = ""
+    @AppStorage("menuBarFavoriteLimit") private var favoriteLimit = 5
+    @AppStorage("menuBarShowRecentScenes") private var showRecentScenes = true
+    @AppStorage("menuBarShowCurrentRun") private var showCurrentRun = true
     private var status: SceneRunStatus { model.currentRun?.status ?? .idle }
     private var progress: Double { guard let run = model.currentRun, !run.actionRecords.isEmpty else { return 0 }; return Double(run.completedActionCount) / Double(run.actionRecords.count) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { WorkspaceCoreView(status: status, progress: progress, compact: true); VStack(alignment: .leading) { Text(model.currentRun?.sceneName ?? "Workspace Orchestrator").font(.headline); Text(status.displayName).font(.caption).foregroundStyle(status.color) }; Spacer() }
-            Divider()
+            if showCurrentRun {
+                HStack { WorkspaceCoreView(status: status, progress: progress, compact: true); VStack(alignment: .leading) { Text(model.currentRun?.sceneName ?? "Workspace Orchestrator").font(.headline); Text(status.displayName).font(.caption).foregroundStyle(status.color) }; Spacer() }
+                Divider()
+            }
             Button(primaryActionLabel) { performPrimaryAction() }.buttonStyle(.borderedProminent).disabled(primaryAction == "runDefaultScene" && !model.scenes.contains { $0.id == defaultSceneID })
-            if !model.favoriteScenes.isEmpty { Text("Favorites").font(.caption.bold()).foregroundStyle(.secondary); ForEach(model.favoriteScenes.prefix(5)) { scene in Button { model.run(scene) } label: { Label(scene.name, systemImage: "play.fill") }.disabled(model.isRunning || scene.trustState == .importedUntrusted) } }
+            if !model.favoriteScenes.isEmpty { Text("Favorites").font(.caption.bold()).foregroundStyle(.secondary); ForEach(model.favoriteScenes.prefix(favoriteLimit)) { scene in Button { model.run(scene) } label: { Label(scene.name, systemImage: "play.fill") }.disabled(model.isRunning || scene.trustState == .importedUntrusted) } }
+            if showRecentScenes, !model.recentScenes.isEmpty { Text("Recent").font(.caption.bold()).foregroundStyle(.secondary); ForEach(model.recentScenes.prefix(3)) { scene in Button { model.run(scene) } label: { Label(scene.name, systemImage: "clock") }.disabled(model.isRunning || scene.trustState == .importedUntrusted) } }
             if model.isRunning { Button("Cancel Current Run", role: .destructive) { model.cancelCurrentRun() } }
             else if model.currentRun != nil { Button("Stop Current Scene", role: .destructive) { model.stopCurrentScene() } }
             Divider()
