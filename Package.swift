@@ -61,6 +61,11 @@ let package = Package(
             name: "ActivationKitTests",
             dependencies: ["ActivationKit", "SceneCore"],
             path: "Tests/ActivationKitTests"
+        ),
+        .testTarget(
+            name: "PerformanceTests",
+            dependencies: ["ActivationKit", "SceneCore"],
+            path: "Tests/PerformanceTests"
         )
     ]
 )
