@@ -23,7 +23,8 @@ struct MenuBarContentView: View {
             Button("Run History") { open(.history) }
             Button("Permissions") { open(.permissions) }
             Button { Task { await model.beginVoiceCommand() } } label: { Label(model.voiceListening ? "Voice Listening…" : "Begin Voice Command", systemImage: "waveform") }.disabled(model.voiceListening)
-            Toggle(isOn: Binding(get: { model.clapListening }, set: { enabled in Task { await model.setClapEnabled(enabled) } })) { Label("Double-Clap Listening", systemImage: model.clapListening ? "ear.fill" : "ear") }
+            Toggle(isOn: Binding(get: { model.clapEnabled }, set: { enabled in Task { await model.setClapEnabled(enabled) } })) { Label("Double-Clap Detection", systemImage: model.clapListening ? "ear.fill" : "ear") }
+            if model.clapEnabled, !model.clapListening { Button("Resume Double-Clap Listening") { Task { await model.resumeClapListening() } }; Text(model.clapState.displayName).font(.caption).foregroundStyle(.secondary) }
             Divider()
             SettingsLink { Text("Settings") }
             Button("Quit Workspace Orchestrator") { NSApp.terminate(nil) }

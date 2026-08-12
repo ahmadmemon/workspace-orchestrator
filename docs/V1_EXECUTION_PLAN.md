@@ -44,7 +44,7 @@ This is the recoverable plan for `1.0.0-rc.1` on `feat/v1-release-candidate`. A 
 - [x] Implement onboarding, dashboard/library/builder, current run, searchable/status-filtered history, capture, integrations, permissions, settings tabs, diagnostics, About, command palette, overlay, menu-bar controls, import review, and process approval sheets.
 - [x] Complete requested History detail/date/retry/export/retention controls with immutable stored snapshots, current preflight, redacted diagnostics, corruption preservation, and deterministic local-calendar tests.
 - [x] Complete persisted configurable Settings, execution defaults, history/privacy controls, non-revealing Keychain management, scoped reset, and allow-listed import/export.
-- [ ] Complete double-clap calibration/test/automatic-pause controls.
+- [x] Complete double-clap calibration, controlled test mode, confirmation behavior, explicit resume, protocol-backed audio boundaries, and automatic reliability/hardware/permission pauses with synthetic tests.
 - [x] Add keyboard/native semantic controls, textual status, reduced-motion/transparency support, and accessibility labels for primary controls.
 - [x] Generate an original icon master and complete Xcode asset set.
 

@@ -18,7 +18,7 @@ The dashboard provides scene cards, recent status, navigation, capture, integrat
 
 ## Optional activation
 
-The global shortcut registers a configured key combination and does not log keys. Double-clap performs local transient-feature detection after microphone opt-in; use confirmation where false activation would be disruptive. Voice commands use on-device recognition and require exact or confirmed scene matching. During an explicitly started voice session, the configured activation phrase may prefix a command, for example “Workspace online, run Project H”; direct commands remain available as an accessibility-friendly alternative. Spoken status announces derived run state. Every service may be disabled independently.
+The global shortcut registers a configured key combination and does not log keys. Double-clap performs local transient-feature detection after microphone opt-in. Settings provides a five-second ambient calibration, confidence/warnings, a no-action test mode, and optional test sound. Detection pauses after repeated false detections, unusable noise, permission or hardware loss, route changes, interruptions, configuration changes, and relaunch; resolve the condition and choose Resume explicitly. Scene activation can require a confirmation before any action executes. Voice commands use on-device recognition and require exact or confirmed scene matching. During an explicitly started voice session, the configured activation phrase may prefix a command, for example “Workspace online, run Project H”; direct commands remain available as an accessibility-friendly alternative. Spoken status announces derived run state. Every service may be disabled independently.
 
 ## Capture, imports, and history
 

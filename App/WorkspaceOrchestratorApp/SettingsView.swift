@@ -18,6 +18,7 @@ struct SettingsView: View {
     @AppStorage("clapSensitivity") private var clapSensitivity = 0.65
     @AppStorage("clapAction") private var clapAction = "showCommandPalette"
     @AppStorage("clapRequiresConfirmation") private var clapRequiresConfirmation = true
+    @AppStorage("clapTestSoundEnabled") private var clapTestSoundEnabled = true
     @AppStorage("voiceLocaleIdentifier") private var voiceLocale = Locale.current.identifier
     @AppStorage("voiceActivationPhrase") private var voicePhrase = "Workspace online"
     @AppStorage("executionDefaultConcurrency") private var defaultConcurrency = 3
@@ -118,10 +119,21 @@ struct SettingsView: View {
                 LabeledContent("Registered", value: hotKeyLabel)
             }
             Section("Double clap — opt in") {
-                Toggle("Enable local double-clap detection", isOn: Binding(get: { model.clapListening }, set: { enabled in Task { await model.setClapEnabled(enabled) } }))
-                Slider(value: $clapSensitivity, in: 0.1...1) { Text("Sensitivity") } minimumValueLabel: { Text("Low") } maximumValueLabel: { Text("High") }.onChange(of: clapSensitivity) { _, _ in if model.clapListening { Task { await model.setClapEnabled(false); await model.setClapEnabled(true) } } }
-                Picker("Action", selection: $clapAction) { Text("Show Command Palette").tag("showCommandPalette"); Text("Run Default Scene").tag("runDefaultScene") }
+                Toggle("Enable local double-clap detection", isOn: Binding(get: { model.clapEnabled }, set: { enabled in Task { await model.setClapEnabled(enabled) } }))
+                LabeledContent("Detector state", value: model.clapState.displayName)
+                Slider(value: $clapSensitivity, in: 0.1...1) { Text("Sensitivity") } minimumValueLabel: { Text("Low") } maximumValueLabel: { Text("High") }.onChange(of: clapSensitivity) { _, _ in model.pauseClapForConfigurationChange() }
+                Picker("Action", selection: $clapAction) { Text("Show Command Palette").tag("showCommandPalette"); Text("Run Default Scene").tag("runDefaultScene") }.onChange(of: clapAction) { _, _ in model.pauseClapForConfigurationChange() }
                 Toggle("Require confirmation before running a scene", isOn: $clapRequiresConfirmation).disabled(clapAction != "runDefaultScene")
+                Toggle("Audible confirmation in test mode", isOn: $clapTestSoundEnabled)
+                HStack { Button("Calibrate Ambient Noise (5s)") { Task { await model.beginClapCalibration() } }.disabled(model.clapState == .calibrating); Button("Test One Double Clap") { Task { await model.beginClapTest() } }.disabled(model.clapState == .testing); Button("Resume Listening") { Task { await model.resumeClapListening() } }.disabled(!model.clapEnabled || model.clapListening || model.clapState == .calibrating || model.clapState == .testing) }
+                if let result = model.clapCalibrationResult {
+                    LabeledContent("Calibration confidence", value: "\(Int(result.confidence * 100))%")
+                    LabeledContent("Ambient noise", value: String(format: "%.4f RMS", result.ambientNoiseFloor))
+                    LabeledContent("Recommended sensitivity", value: "\(Int(result.recommendedSensitivity * 100))%")
+                    if !result.warnings.isEmpty { Text("Warnings: \(result.warnings.map(\.rawValue).joined(separator: ", "))").foregroundStyle(.orange) }
+                    Button("Apply Recommendation") { Task { await model.applyRecommendedClapSensitivity() } }.disabled(!result.isUsable)
+                }
+                if let message = model.clapTestMessage { Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
                 LabeledContent("Microphone", value: model.microphonePermissionStatus.rawValue)
             }
             Section("Voice and spoken status") {

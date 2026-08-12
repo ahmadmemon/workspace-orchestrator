@@ -12,6 +12,6 @@ Workspace Orchestrator is local-first and single-user. V1 has no account, analyt
 
 Run records may contain paths, executable arguments, URLs, window titles, errors, stdout, and stderr. Redaction removes configured secret-like fields and output is bounded, but it cannot guarantee that arbitrary program output is nonsensitive. Review before export or sharing.
 
-Double-clap detection processes audio frames into transient features and does not intentionally persist recordings. Voice mode requests on-device recognition; no cloud fallback is permitted. Apple system services may have their own OS privacy behavior, which the permission sheet exposes before enabling.
+Double-clap detection processes audio frames into transient features and never stores raw audio. Calibration retains only an aggregate sample count, ambient RMS statistics, confidence, warnings, and a recommended sensitivity in memory; the controlled test mode runs no scene. Detection pauses on reliability, permission, route, interruption, hardware, configuration, and restart conditions and requires explicit resume. Voice mode requests on-device recognition; no cloud fallback is permitted. Apple system services may have their own OS privacy behavior, which the permission sheet exposes before enabling.
 
 Uninstalling the app does not automatically delete Application Support or Keychain data. See [Release](RELEASE.md) for removal steps. Report privacy/security issues privately according to [SECURITY.md](../SECURITY.md).
