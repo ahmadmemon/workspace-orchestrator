@@ -8,7 +8,8 @@ let package = Package(
     products: [
         .library(name: "SceneCore", targets: ["SceneCore"]),
         .library(name: "OrchestrationEngine", targets: ["OrchestrationEngine"]),
-        .library(name: "MacAutomation", targets: ["MacAutomation"])
+        .library(name: "MacAutomation", targets: ["MacAutomation"]),
+        .library(name: "WorkspaceIntegrations", targets: ["WorkspaceIntegrations"])
     ],
     targets: [
         .target(
@@ -25,6 +26,11 @@ let package = Package(
             dependencies: ["SceneCore", "OrchestrationEngine"],
             path: "Packages/MacAutomation/Sources/MacAutomation"
         ),
+        .target(
+            name: "WorkspaceIntegrations",
+            dependencies: ["SceneCore", "OrchestrationEngine", "MacAutomation"],
+            path: "Packages/WorkspaceIntegrations/Sources/WorkspaceIntegrations"
+        ),
         .testTarget(
             name: "OrchestrationEngineTests",
             dependencies: ["OrchestrationEngine", "SceneCore"],
@@ -39,6 +45,11 @@ let package = Package(
             name: "MacAutomationTests",
             dependencies: ["MacAutomation", "SceneCore"],
             path: "Tests/MacAutomationTests"
+        ),
+        .testTarget(
+            name: "WorkspaceIntegrationsTests",
+            dependencies: ["WorkspaceIntegrations", "SceneCore", "MacAutomation"],
+            path: "Tests/WorkspaceIntegrationsTests"
         )
     ]
 )
