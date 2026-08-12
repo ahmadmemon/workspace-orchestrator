@@ -69,9 +69,14 @@ final class AppModel: ObservableObject {
     var recentScenes: [Scene] { let ids = runHistory.map(\.sceneID); return scenes.sorted { (ids.firstIndex(of: $0.id) ?? .max) < (ids.firstIndex(of: $1.id) ?? .max) }.prefix(5).map { $0 } }
 
     init(store: (any SceneStoring)? = nil, executor: SceneExecutor? = nil, historyStore: (any RunHistoryStoring)? = nil) {
-        let fallback = FileManager.default.temporaryDirectory.appendingPathComponent("WorkspaceOrchestrator", isDirectory: true)
-        do { self.store = try store ?? JSONSceneStore.applicationSupportStore() } catch { self.store = JSONSceneStore(directoryURL: fallback); presentedError = error.localizedDescription }
-        do { self.historyStore = try historyStore ?? JSONRunHistoryStore.applicationSupportStore() } catch { self.historyStore = JSONRunHistoryStore(directoryURL: fallback.appendingPathComponent("RunHistory")); presentedError = error.localizedDescription }
+        let arguments = ProcessInfo.processInfo.arguments
+        let uiTesting = arguments.contains("--ui-testing")
+        let fallback = FileManager.default.temporaryDirectory.appendingPathComponent("WorkspaceOrchestrator-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+        if uiTesting { self.store = store ?? JSONSceneStore(directoryURL: fallback); self.historyStore = historyStore ?? JSONRunHistoryStore(directoryURL: fallback.appendingPathComponent("RunHistory")); onboardingPresented = arguments.contains("--reset-onboarding") }
+        else {
+            do { self.store = try store ?? JSONSceneStore.applicationSupportStore() } catch { self.store = JSONSceneStore(directoryURL: fallback); presentedError = error.localizedDescription }
+            do { self.historyStore = try historyStore ?? JSONRunHistoryStore.applicationSupportStore() } catch { self.historyStore = JSONRunHistoryStore(directoryURL: fallback.appendingPathComponent("RunHistory")); presentedError = error.localizedDescription }
+        }
         let managed = ManagedProcessController(); managedProcesses = managed
         let permission = SystemAccessibilityPermissionManager(); accessibilityPermission = permission
         let windows = AXWindowLayoutController(permission: permission); windowController = windows
@@ -86,7 +91,7 @@ final class AppModel: ObservableObject {
         let runner = FoundationProcessRunner()
         self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: SystemKeychainStore(), windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner), additionalHealthChecker: DockerIntegrationHealthChecker(processRunner: runner))
         spokenStatus.enabled = UserDefaults.standard.bool(forKey: "spokenStatusEnabled")
-        configureGlobalHotKey()
+        if !uiTesting { configureGlobalHotKey() }
         Task { await refresh() }
     }
 

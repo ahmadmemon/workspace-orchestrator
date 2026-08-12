@@ -6,8 +6,10 @@ struct WorkspaceOrchestratorApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        MenuBarExtra("Workspace Orchestrator", systemImage: menuBarSymbol) {
+        MenuBarExtra {
             MenuBarContentView(model: model)
+        } label: {
+            MenuBarLabel(symbol: menuBarSymbol)
         }
         .menuBarExtraStyle(.window)
 
@@ -31,5 +33,20 @@ struct WorkspaceOrchestratorApp: App {
         case .failed: "xmark.square.fill"
         default: "square.grid.2x2"
         }
+    }
+}
+
+private struct MenuBarLabel: View {
+    @Environment(\.openWindow) private var openWindow
+    let symbol: String
+
+    var body: some View {
+        Image(systemName: symbol)
+            .accessibilityLabel("Workspace Orchestrator")
+            .task {
+                guard ProcessInfo.processInfo.arguments.contains("--ui-testing") else { return }
+                openWindow(id: "dashboard")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
     }
 }
