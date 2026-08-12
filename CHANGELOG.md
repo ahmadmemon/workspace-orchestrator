@@ -6,7 +6,8 @@ All notable changes follow Keep a Changelog. The project uses Semantic Versionin
 
 ### Added
 
-- Release-candidate CI/publication follow-up and human acceptance evidence will be recorded here.
+- Guided local double-clap calibration now combines bounded ambient sampling with one representative double clap, offers adjustable sensitivity/timing recommendations that save only after confirmation, and exposes a nonexecuting diagnostic test trace.
+- Audio reliability now distinguishes permission, hardware, route, interruption, unusable format, sustained noise, repeated clipping, sleep, manual pause, and cooldown states, with bounded safe recovery.
 
 ## [1.0.0-rc.1] - 2026-08-12
 

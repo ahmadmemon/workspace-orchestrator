@@ -78,13 +78,23 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
     }
 
     func testSettingsExposePersistedGeneralControls() throws {
-        let app = launch(["--seed-ui-fixtures"])
-        app.typeKey(",", modifierFlags: .command)
+        let app = launch(["--seed-ui-fixtures", "--ui-show-settings"])
 
         XCTAssertTrue(app.descendants(matching: .any)["screen.settings"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["Open Dashboard at launch"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["Reopen interrupted-run recovery at launch"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["Check for Updates Now"].exists)
+    }
+
+    func testSettingsExposeGuidedClapCalibrationAndNonexecutingTestControls() throws {
+        let app = launch(["--seed-ui-fixtures", "--ui-show-settings", "--ui-settings-activation"])
+        XCTAssertTrue(app.descendants(matching: .any)["screen.settings"].waitForExistence(timeout: 5))
+
+        let startCalibration = app.descendants(matching: .any)["settings.clapCalibration.start"]
+        XCTAssertTrue(startCalibration.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["settings.clapTest.start"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Reset Calibration"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["settings.clapPrivacy"].exists)
     }
 
     private func launch(_ arguments: [String]) -> XCUIApplication {
@@ -95,9 +105,9 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
     }
 
     private func select(_ section: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        app.activate()
         let item = app.descendants(matching: .any)["navigation.\(section)"]
         XCTAssertTrue(item.waitForExistence(timeout: 5), "Missing navigation item \(section)", file: file, line: line)
-        app.activate()
-        item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        app.descendants(matching: .any)["navigation.\(section)"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     }
 }

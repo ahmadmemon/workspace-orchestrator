@@ -28,6 +28,8 @@ struct SettingsView: View {
     @AppStorage("globalShortcutTarget") private var globalShortcutTarget = "commandPalette"
     @AppStorage("globalShortcutFavoriteSceneID") private var globalShortcutFavoriteSceneID = ""
     @AppStorage("clapSensitivity") private var clapSensitivity = 0.65
+    @AppStorage("clapMinimumInterval") private var clapMinimumInterval = 0.12
+    @AppStorage("clapMaximumInterval") private var clapMaximumInterval = 0.65
     @AppStorage("clapAction") private var clapAction = "showCommandPalette"
     @AppStorage("clapRequiresConfirmation") private var clapRequiresConfirmation = true
     @AppStorage("clapCooldown") private var clapCooldown = 2.5
@@ -72,18 +74,22 @@ struct SettingsView: View {
     @State private var importingScenes = false
     @State private var exportingScenes = false
     @State private var sceneArchiveDocument: SceneArchiveDocument?
+    @State private var calibrationSensitivityDraft = 0.65
+    @State private var calibrationMinimumDraft = 0.12
+    @State private var calibrationMaximumDraft = 0.65
+    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--ui-settings-activation") ? "activation" : "general"
 
     var body: some View {
-        TabView {
-            generalTab.tabItem { Label("General", systemImage: "gear") }
-            appearanceTab.tabItem { Label("Appearance", systemImage: "paintbrush") }
-            activationTab.tabItem { Label("Activation", systemImage: "waveform") }
-            executionTab.tabItem { Label("Execution", systemImage: "bolt") }
-            privacyTab.tabItem { Label("Privacy", systemImage: "hand.raised") }
-            permissionsTab.tabItem { Label("Permissions", systemImage: "lock.shield") }
-            integrationsTab.tabItem { Label("Integrations", systemImage: "puzzlepiece.extension") }
-            advancedTab.tabItem { Label("Advanced", systemImage: "wrench.and.screwdriver") }
-            aboutTab.tabItem { Label("About", systemImage: "info.circle") }
+        TabView(selection: $selectedTab) {
+            generalTab.tabItem { Label("General", systemImage: "gear") }.tag("general")
+            appearanceTab.tabItem { Label("Appearance", systemImage: "paintbrush") }.tag("appearance")
+            activationTab.tabItem { Label("Activation", systemImage: "waveform") }.tag("activation")
+            executionTab.tabItem { Label("Execution", systemImage: "bolt") }.tag("execution")
+            privacyTab.tabItem { Label("Privacy", systemImage: "hand.raised") }.tag("privacy")
+            permissionsTab.tabItem { Label("Permissions", systemImage: "lock.shield") }.tag("permissions")
+            integrationsTab.tabItem { Label("Integrations", systemImage: "puzzlepiece.extension") }.tag("integrations")
+            advancedTab.tabItem { Label("Advanced", systemImage: "wrench.and.screwdriver") }.tag("advanced")
+            aboutTab.tabItem { Label("About", systemImage: "info.circle") }.tag("about")
         }
         .frame(width: 760, height: 560)
         .accessibilityIdentifier("screen.settings")
@@ -181,18 +187,37 @@ struct SettingsView: View {
             Section("Double clap — opt in") {
                 Toggle("Enable local double-clap detection", isOn: Binding(get: { model.clapEnabled }, set: { enabled in Task { await model.setClapEnabled(enabled) } }))
                 LabeledContent("Detector state", value: model.clapState.displayName)
+                Text("Guided calibration analyzes only bounded energy, duration, spectrum, timing, and noise features on this Mac. It never stores or transmits audio.").font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("settings.clapPrivacy")
+                HStack {
+                    Button("Start Guided Calibration") { Task { await model.beginClapCalibration() } }.disabled(model.clapState.isCalibrating || model.clapState == .testing).accessibilityIdentifier("settings.clapCalibration.start")
+                    if model.clapState.isCalibrating { Button("Cancel Calibration") { model.cancelClapCalibration() }.accessibilityIdentifier("settings.clapCalibration.cancel") }
+                    Button("Start Nonexecuting Test") { Task { await model.beginClapTest() } }.disabled(model.clapState == .testing || model.clapState.isCalibrating).accessibilityIdentifier("settings.clapTest.start")
+                    if model.clapState == .testing { Button("Stop Test") { model.stopClapTest() }.accessibilityIdentifier("settings.clapTest.stop") }
+                }
                 Slider(value: $clapSensitivity, in: 0.1...1) { Text("Sensitivity") } minimumValueLabel: { Text("Low") } maximumValueLabel: { Text("High") }.onChange(of: clapSensitivity) { _, _ in model.pauseClapForConfigurationChange() }
+                LabeledContent("Accepted clap interval", value: String(format: "%.2f–%.2f seconds", clapMinimumInterval, clapMaximumInterval))
                 Picker("Action", selection: $clapAction) { Text("Show Command Palette").tag("showCommandPalette"); Text("Run Default Scene").tag("runDefaultScene") }.onChange(of: clapAction) { _, _ in model.pauseClapForConfigurationChange() }
                 Toggle("Require confirmation before running a scene", isOn: $clapRequiresConfirmation).disabled(clapAction != "runDefaultScene")
                 Stepper("Cooldown: \(clapCooldown, specifier: "%.1f") seconds", value: $clapCooldown, in: 0.5...30, step: 0.5).onChange(of: clapCooldown) { _, _ in model.pauseClapForConfigurationChange() }
                 Toggle("Audible confirmation in test mode", isOn: $clapTestSoundEnabled)
-                HStack { Button("Calibrate Ambient Noise (5s)") { Task { await model.beginClapCalibration() } }.disabled(model.clapState == .calibrating); Button("Test One Double Clap") { Task { await model.beginClapTest() } }.disabled(model.clapState == .testing); Button("Resume Listening") { Task { await model.resumeClapListening() } }.disabled(!model.clapEnabled || model.clapListening || model.clapState == .calibrating || model.clapState == .testing) }
+                HStack {
+                    Button("Pause Listening") { model.pauseClapListeningManually() }.disabled(!model.clapListening)
+                    Button("Resume Listening") { Task { await model.resumeClapListening() } }.disabled(!model.clapEnabled || model.clapListening || model.clapState.isCalibrating || model.clapState == .testing)
+                    Button("Reset Calibration") { model.resetClapCalibration() }
+                }
                 if let result = model.clapCalibrationResult {
                     LabeledContent("Calibration confidence", value: "\(Int(result.confidence * 100))%")
                     LabeledContent("Ambient noise", value: String(format: "%.4f RMS", result.ambientNoiseFloor))
-                    LabeledContent("Recommended sensitivity", value: "\(Int(result.recommendedSensitivity * 100))%")
+                    if let energy = result.representativePeakEnergy { LabeledContent("Representative peak", value: String(format: "%.3f RMS", energy)) }
+                    if let interval = result.representativeInterval { LabeledContent("Representative interval", value: String(format: "%.2f seconds", interval)) }
+                    Slider(value: $calibrationSensitivityDraft, in: 0.1...1) { Text("Recommended sensitivity") } minimumValueLabel: { Text("Low") } maximumValueLabel: { Text("High") }
+                    Stepper("Minimum interval: \(calibrationMinimumDraft, specifier: "%.2f") seconds", value: $calibrationMinimumDraft, in: 0.08...1.1, step: 0.01)
+                    Stepper("Maximum interval: \(calibrationMaximumDraft, specifier: "%.2f") seconds", value: $calibrationMaximumDraft, in: max(0.16, calibrationMinimumDraft + 0.08)...1.2, step: 0.01)
                     if !result.warnings.isEmpty { Text("Warnings: \(result.warnings.map(\.rawValue).joined(separator: ", "))").foregroundStyle(.orange) }
-                    Button("Apply Recommendation") { Task { await model.applyRecommendedClapSensitivity() } }.disabled(!result.isUsable)
+                    Button("Accept Calibrated Settings") { model.acceptClapCalibration(sensitivity: calibrationSensitivityDraft, minimumInterval: calibrationMinimumDraft, maximumInterval: calibrationMaximumDraft) }.disabled(!result.isUsable).accessibilityIdentifier("settings.clapCalibration.accept")
+                }
+                if !model.clapTestStatuses.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) { ForEach(Array(model.clapTestStatuses.enumerated()), id: \.offset) { _, status in Text(status.displayName).font(.caption).foregroundStyle(.secondary) } }
                 }
                 if let message = model.clapTestMessage { Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
                 LabeledContent("Microphone", value: model.microphonePermissionStatus.rawValue)
@@ -210,6 +235,12 @@ struct SettingsView: View {
             Button("Reset Activation Settings") { Task { await model.resetActivationSettings() } }
             Text("Audio features remain off until explicitly enabled and permitted. Clap audio is never stored; voice has no cloud fallback.").foregroundStyle(.secondary)
         }.padding(24)
+        .onChange(of: model.clapCalibrationResult) { _, result in
+            guard let result else { return }
+            calibrationSensitivityDraft = result.recommendedSensitivity
+            calibrationMinimumDraft = result.recommendedMinimumInterval
+            calibrationMaximumDraft = result.recommendedMaximumInterval
+        }
     }
 
     private var executionTab: some View {

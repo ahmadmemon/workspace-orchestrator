@@ -44,7 +44,7 @@ This is the recoverable plan for `1.0.0-rc.1` on `feat/v1-release-candidate`. A 
 - [x] Implement onboarding, dashboard/library/builder, current run, searchable/status-filtered history, capture, integrations, permissions, settings tabs, diagnostics, About, command palette, overlay, menu-bar controls, import review, and process approval sheets.
 - [x] Complete requested History detail/date/retry/export/retention controls with immutable stored snapshots, current preflight, redacted diagnostics, corruption preservation, and deterministic local-calendar tests.
 - [x] Complete persisted configurable Settings, execution defaults, history/privacy controls, non-revealing Keychain management, scoped reset, and allow-listed import/export.
-- [x] Complete double-clap calibration, controlled test mode, confirmation behavior, explicit resume, protocol-backed audio boundaries, and automatic reliability/hardware/permission pauses with synthetic tests.
+- [x] Complete guided ambient-plus-representative-clap calibration, explicit accept/adjust persistence, controlled nonexecuting test-state trace, confirmation behavior, protocol-backed audio boundaries, exact pause reasons, and bounded safe recovery with synthetic tests.
 - [x] Add keyboard/native semantic controls, textual status, reduced-motion/transparency support, and accessibility labels for primary controls.
 - [x] Generate an original icon master and complete Xcode asset set.
 
@@ -52,7 +52,7 @@ Human verification remains required for navigation polish, every VoiceOver/focus
 
 ## 6. Quality, documentation, and release engineering
 
-- [x] Expand deterministic unit/integration/security/reliability/performance coverage from the 28-test baseline to 92 passing package tests, plus 4 deterministic XCUITests.
+- [x] Expand deterministic unit/integration/security/reliability/performance coverage from the 28-test baseline to 133 passing package tests, plus 7 deterministic XCUITests.
 - [x] Add user, quick-start, builder, integration, permissions, privacy, threat, troubleshooting, import/export, design, scope, smoke-test, and release documentation.
 - [x] Set `1.0.0-rc.1` build 1, hardened runtime, limited entitlement, version/security gates, and non-overwriting universal packaging with checksums/inventory/provenance.
 - [ ] Verify PR/main CI and credential-gated release automation after workflow changes are committed and pushed.
@@ -78,7 +78,7 @@ xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestrato
 OUTPUT_DIR=/absolute/new/output scripts/build-release.sh
 ```
 
-The first incremental `swift test` after public scheduler-model changes crashed in stale SwiftPM ABI/cache state (signals 10/11). `swift package clean` followed by a full rebuild passed all tests, confirming an environment-derived cache issue rather than a reproducible source failure. The final suite passed 92 package tests and 4 XCUITests with no failures.
+The first incremental `swift test` after public scheduler-model changes crashed in stale SwiftPM ABI/cache state (signals 10/11). `swift package clean` followed by a full rebuild passed all tests, confirming an environment-derived cache issue rather than a reproducible source failure. The latest full suite passed 133 package tests and 7 XCUITests with no failures.
 
 ## External release gates
 

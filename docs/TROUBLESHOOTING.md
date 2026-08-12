@@ -18,7 +18,7 @@ Grant Accessibility only if you want window features, then refresh/retry. Some a
 
 ## Clap or voice does not work
 
-Confirm the feature is enabled, permission is granted, and the active indicator is present. Clap detection needs two distinct transients within its configured interval and may reject noise. Voice requires on-device Speech availability and an unambiguous scene name. Use the global shortcut as the accessible fallback.
+Confirm the feature is enabled, permission is granted, and read the exact detector state in Settings. Run Guided Calibration in a representative room, remain quiet during the bounded ambient phase, then perform one normal double clap. Review/adjust and explicitly accept the recommendation. Nonexecuting Test explains too-quiet, clipped, timing, speech/noise, and cooldown rejection without running a scene. Route, interruption, format, device, or sleep failures use bounded recovery; permission denial or persistent hardware failure stays paused until resolved and explicitly resumed. Voice requires on-device Speech availability and an unambiguous scene name. Use the global shortcut as the accessible fallback.
 
 ## Run is interrupted, degraded, or cannot cancel fully
 

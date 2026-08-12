@@ -15,8 +15,10 @@ struct WorkspaceOrchestratorApp: App {
         .menuBarExtraStyle(.window)
 
         Window("Workspace Orchestrator", id: "dashboard") {
-            DashboardView(model: model)
-                .frame(minWidth: 980, minHeight: 680)
+            Group {
+                if ProcessInfo.processInfo.arguments.contains("--ui-show-settings") { SettingsView(model: model) }
+                else { DashboardView(model: model).frame(minWidth: 980, minHeight: 680) }
+            }
                 .preferredColorScheme(appearanceMode == "System" ? nil : .dark)
         }
         .defaultSize(width: 1180, height: 780)

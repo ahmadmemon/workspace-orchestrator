@@ -68,6 +68,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var clapState: ClapListenerState = UserDefaults.standard.bool(forKey: "clapEnabled") ? .paused(.restartRequiresResume) : .stopped
     @Published private(set) var clapCalibrationResult: ClapCalibrationResult?
     @Published private(set) var clapTestMessage: String?
+    @Published private(set) var clapTestStatuses: [ClapTestStatus] = []
     @Published var clapConfirmationScene: Scene?
     @Published private(set) var voiceListening = false
     @Published var voicePanelPresented = false
@@ -98,7 +99,7 @@ final class AppModel: ObservableObject {
 
     static let preferenceKeys = [
         "appearanceMode", "effectIntensity", "workspaceCoreAnimationIntensity", "notificationsEnabled", "spokenStatusEnabled", "spokenStatusDetailLevel", "voiceEnabled", "reduceCustomEffects", "compactRows", "soundEffectsEnabled", "soundEffectsVolume",
-        "hotKeySelection", "hotKeyLabel", "hotKeyCode", "hotKeyModifiers", "globalShortcutTarget", "globalShortcutFavoriteSceneID", "clapEnabled", "clapSensitivity", "clapAction", "clapRequiresConfirmation", "clapCooldown", "clapTestSoundEnabled",
+        "hotKeySelection", "hotKeyLabel", "hotKeyCode", "hotKeyModifiers", "globalShortcutTarget", "globalShortcutFavoriteSceneID", "clapEnabled", "clapSensitivity", "clapMinimumInterval", "clapMaximumInterval", "clapAction", "clapRequiresConfirmation", "clapCooldown", "clapTestSoundEnabled",
         "voiceLocaleIdentifier", "voiceActivationPhrase", "voiceMatchConfirmationPolicy", "defaultSceneID", "menuBarPrimaryAction", "menuBarFavoriteLimit", "menuBarShowRecentScenes", "menuBarShowCurrentRun", "openDashboardAtLaunch", "reopenInterruptedRunAtLaunch", "checkForUpdatesAtLaunch",
         "executionDefaultConcurrency", "executionDefaultTimeout", "executionRetryStrategy", "executionRetryAttempts", "executionRetryDelay", "executionFailurePolicy", "managedProcessGraceSeconds", "managedProcessForcedStopSeconds", "executionDefaultOutputRetention", "executionDefaultHealthInterval", "executionDefaultHealthAttempts", "executionDefaultOwnershipPolicy", "processApprovalBehavior",
         "historyRetentionDays", "historyMaximumRunCount", "historyOutputEnabled", "historyMaximumOutputBytes", "advancedDiagnosticLogging"
@@ -316,7 +317,7 @@ final class AppModel: ObservableObject {
     var voiceActivationPhrase: String { UserDefaults.standard.string(forKey: "voiceActivationPhrase") ?? "Workspace online" }
     func setClapEnabled(_ enabled: Bool) async {
         if !enabled {
-            clapListener?.stop(); clapListener = nil; clapListening = false; clapEnabled = false; clapState = .stopped; clapTestMessage = nil
+            clapListener?.stop(); clapListener = nil; clapListening = false; clapEnabled = false; clapState = .stopped; clapTestMessage = nil; clapTestStatuses = []
             UserDefaults.standard.set(false, forKey: "clapEnabled")
             return
         }
@@ -348,17 +349,16 @@ final class AppModel: ObservableObject {
         clapTestMessage = "Detection settings changed. Resume explicitly to use the new configuration."
     }
     func beginClapCalibration() async {
-        clapCalibrationResult = nil; clapTestMessage = nil
+        clapCalibrationResult = nil; clapTestMessage = "Calibration runs locally: first five seconds of ambient sampling, then one representative double clap. Audio is never stored."; clapTestStatuses = []
         var permitted = microphonePermissionStatus == .granted
         if !permitted { permitted = await LocalClapListener.requestMicrophonePermission() }
         guard permitted else { clapState = .paused(.permissionRevoked); presentedError = "Microphone permission is required for calibration."; return }
-        clapEnabled = true; UserDefaults.standard.set(true, forKey: "clapEnabled")
         let listener = makeClapListener(); clapListener = listener
         do { try listener.beginCalibration(duration: 5) }
         catch { presentedError = error.localizedDescription }
     }
     func beginClapTest() async {
-        clapTestMessage = "Listening for one double clap. No scene will run."
+        clapTestStatuses = []; clapTestMessage = "Listening for one double clap. Test mode cannot run a scene."
         var permitted = microphonePermissionStatus == .granted
         if !permitted { permitted = await LocalClapListener.requestMicrophonePermission() }
         guard permitted else { clapState = .paused(.permissionRevoked); presentedError = "Microphone permission is required for test mode."; return }
@@ -366,10 +366,29 @@ final class AppModel: ObservableObject {
         do { try listener.beginTest() }
         catch { presentedError = error.localizedDescription }
     }
-    func applyRecommendedClapSensitivity() async {
-        guard let result = clapCalibrationResult else { return }
-        UserDefaults.standard.set(result.recommendedSensitivity, forKey: "clapSensitivity")
-        clapTestMessage = "Applied recommended sensitivity \(Int(result.recommendedSensitivity * 100))%. Resume explicitly when ready."
+    func cancelClapCalibration() {
+        clapListener?.cancelCalibration()
+        clapTestMessage = "Calibration cancelled. No recommendation was saved."
+    }
+    func stopClapTest() {
+        clapListener?.stopTest()
+        clapTestMessage = "Test stopped. No scene ran."
+    }
+    func pauseClapListeningManually() {
+        clapListener?.pauseExplicitly()
+    }
+    func resetClapCalibration() {
+        clapListener?.resetCalibration()
+        clapCalibrationResult = nil
+        for key in ["clapSensitivity", "clapMinimumInterval", "clapMaximumInterval"] { UserDefaults.standard.removeObject(forKey: key) }
+        clapTestMessage = "Saved calibration values were reset. Detection remains in its current safe state."
+    }
+    func acceptClapCalibration(sensitivity: Double, minimumInterval: Double, maximumInterval: Double) {
+        guard let result = clapCalibrationResult, let accepted = result.configurationAfterConfirmation(base: .init(enabled: clapEnabled), sensitivity: sensitivity, minimumInterval: minimumInterval, maximumInterval: maximumInterval) else { return }
+        UserDefaults.standard.set(accepted.sensitivity, forKey: "clapSensitivity")
+        UserDefaults.standard.set(accepted.minimumInterval, forKey: "clapMinimumInterval")
+        UserDefaults.standard.set(accepted.maximumInterval, forKey: "clapMaximumInterval")
+        clapTestMessage = "Calibration settings saved after confirmation. Resume explicitly when ready."
     }
     func confirmClapSceneRun() {
         guard let scene = clapConfirmationScene else { return }
@@ -641,7 +660,7 @@ final class AppModel: ObservableObject {
         for key in ["appearanceMode", "effectIntensity", "workspaceCoreAnimationIntensity", "reduceCustomEffects", "compactRows", "soundEffectsEnabled", "soundEffectsVolume"] { UserDefaults.standard.removeObject(forKey: key) }
     }
     func resetActivationSettings() async {
-        for key in ["hotKeySelection", "hotKeyLabel", "hotKeyCode", "hotKeyModifiers", "globalShortcutTarget", "globalShortcutFavoriteSceneID", "clapEnabled", "clapSensitivity", "clapAction", "clapRequiresConfirmation", "clapCooldown", "clapTestSoundEnabled", "voiceEnabled", "voiceLocaleIdentifier", "voiceActivationPhrase", "voiceMatchConfirmationPolicy", "spokenStatusEnabled", "spokenStatusDetailLevel"] { UserDefaults.standard.removeObject(forKey: key) }
+        for key in ["hotKeySelection", "hotKeyLabel", "hotKeyCode", "hotKeyModifiers", "globalShortcutTarget", "globalShortcutFavoriteSceneID", "clapEnabled", "clapSensitivity", "clapMinimumInterval", "clapMaximumInterval", "clapAction", "clapRequiresConfirmation", "clapCooldown", "clapTestSoundEnabled", "voiceEnabled", "voiceLocaleIdentifier", "voiceActivationPhrase", "voiceMatchConfirmationPolicy", "spokenStatusEnabled", "spokenStatusDetailLevel"] { UserDefaults.standard.removeObject(forKey: key) }
         spokenStatus.enabled = false; spokenStatus.detailLevel = .concise
         clapListener?.stop(); clapListener = nil; clapListening = false; clapEnabled = false; clapState = .stopped
         cancelVoiceCommand()
@@ -734,6 +753,8 @@ final class AppModel: ObservableObject {
             case "menuBarFavoriteLimit": return min(max(number.intValue, 1), 10)
             case "executionDefaultHealthAttempts": return min(max(number.intValue, 1), 100)
             case "clapSensitivity": return min(max(number.doubleValue, 0.1), 1)
+            case "clapMinimumInterval": return min(max(number.doubleValue, 0.08), 1.1)
+            case "clapMaximumInterval": return min(max(number.doubleValue, 0.16), 1.2)
             case "clapCooldown": return min(max(number.doubleValue, 0.5), 30)
             case "effectIntensity", "workspaceCoreAnimationIntensity", "soundEffectsVolume": return min(max(number.doubleValue, 0), 1)
             case "executionDefaultTimeout": return min(max(number.doubleValue, 0), 86_400)
@@ -809,9 +830,11 @@ final class AppModel: ObservableObject {
     private func makeClapListener() -> LocalClapListener {
         let defaults = UserDefaults.standard
         let sensitivity = defaults.object(forKey: "clapSensitivity") as? Double ?? 0.65
+        let minimumInterval = defaults.object(forKey: "clapMinimumInterval") as? Double ?? 0.12
+        let maximumInterval = defaults.object(forKey: "clapMaximumInterval") as? Double ?? 0.65
         let cooldown = defaults.object(forKey: "clapCooldown") as? Double ?? 2.5
         let action: ActivationAction = defaults.string(forKey: "clapAction") == "runDefaultScene" ? .favoriteWithConfirmation : .commandPalette
-        let configuration = ClapConfiguration(enabled: true, sensitivity: sensitivity, cooldown: cooldown, action: action)
+        let configuration = ClapConfiguration(enabled: true, sensitivity: sensitivity, minimumInterval: minimumInterval, maximumInterval: maximumInterval, cooldown: cooldown, action: action)
         return LocalClapListener(configuration: configuration) { [weak self] in
             self?.handleClapActivation()
         } onStateChange: { [weak self] state in
@@ -826,6 +849,11 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.clapTestMessage = "Double clap detected. Test mode did not run a scene."
             if UserDefaults.standard.object(forKey: "clapTestSoundEnabled") as? Bool ?? true { NSSound(named: "Tink")?.play() }
+        } onTestStatus: { [weak self] status in
+            guard let self else { return }
+            self.clapTestStatuses.append(status)
+            if self.clapTestStatuses.count > 20 { self.clapTestStatuses.removeFirst(self.clapTestStatuses.count - 20) }
+            self.clapTestMessage = status.displayName
         }
     }
 

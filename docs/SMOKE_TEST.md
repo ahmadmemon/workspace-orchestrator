@@ -30,7 +30,7 @@ Record macOS version, hardware architecture, display arrangement, app revision, 
 ## Activation and platform services
 
 - [ ] Register/change/conflict-test the global shortcut; ensure no keystroke logging behavior
-- [ ] Grant/deny/revoke microphone; test double-clap calibration in quiet/noisy rooms, cooldown, false positives, and disabled state
+- [ ] Grant/deny/revoke microphone; verify guided ambient + representative-clap calibration, accept/adjust/cancel persistence, test-mode states/reasons without execution, cooldown, quiet/noisy/clipped input, manual pause, bounded device/route/interruption/format recovery, persistent failure, relaunch state, and disabled state
 - [ ] Grant/deny/revoke Speech; test exact, fuzzy, ambiguous, cancel/stop/navigation phrases and offline/on-device unavailability
 - [ ] Verify spoken status and notifications are optional, accurate, and disabled when requested
 - [ ] Enable/disable launch at login and verify after a real login

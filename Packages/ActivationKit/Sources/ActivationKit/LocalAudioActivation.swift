@@ -1,14 +1,17 @@
 import AVFoundation
+import AppKit
 import Foundation
 import Speech
 
 public enum ClapAudioSourceError: LocalizedError {
     case permissionRequired
     case noInputDevice
+    case unusableInputFormat
     public var errorDescription: String? {
         switch self {
         case .permissionRequired: "Microphone permission is required before local double-clap detection can start."
         case .noInputDevice: "No usable microphone input is currently available. Double-clap detection remains paused."
+        case .unusableInputFormat: "The microphone input format cannot be analyzed safely. Double-clap detection remains paused."
         }
     }
 }
@@ -18,6 +21,7 @@ public final class AVAudioFeatureSource: AudioFeatureSourcing {
     private let engine = AVAudioEngine()
     private var installedTap = false
     private var observers: [NSObjectProtocol] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
     private var eventHandler: ((AudioFeatureSourceEvent) -> Void)?
     public private(set) var isRunning = false
 
@@ -29,7 +33,7 @@ public final class AVAudioFeatureSource: AudioFeatureSourcing {
         guard LocalClapListener.microphonePermissionStatus == .granted else { onEvent(.permissionRevoked); throw ClapAudioSourceError.permissionRequired }
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else { onEvent(.hardwareUnavailable); throw ClapAudioSourceError.noInputDevice }
+        guard format.sampleRate > 0, format.channelCount > 0 else { onEvent(.unusableInputFormat); throw ClapAudioSourceError.unusableInputFormat }
         input.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
             guard let channel = buffer.floatChannelData?.pointee else { return }
             let count = Int(buffer.frameLength)
@@ -50,6 +54,7 @@ public final class AVAudioFeatureSource: AudioFeatureSourcing {
         installedTap = true
         observers.append(NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in guard let source = self else { return }; Task { @MainActor in source.pauseForHardwareEvent(.routeChanged) } })
         observers.append(NotificationCenter.default.addObserver(forName: .AVCaptureDeviceWasDisconnected, object: nil, queue: .main) { [weak self] _ in guard let source = self else { return }; Task { @MainActor in source.pauseForHardwareEvent(.hardwareUnavailable) } })
+        workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in guard let source = self else { return }; Task { @MainActor in source.pauseForHardwareEvent(.unsafeApplicationState) } })
         engine.prepare()
         do { try engine.start(); isRunning = true }
         catch { stop(); onEvent(.hardwareUnavailable); throw error }
@@ -60,6 +65,8 @@ public final class AVAudioFeatureSource: AudioFeatureSourcing {
         if engine.isRunning { engine.stop() }
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers.removeAll()
+        for observer in workspaceObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+        workspaceObservers.removeAll()
         isRunning = false
     }
 
@@ -75,22 +82,32 @@ public final class LocalClapListener {
     private let source: any AudioFeatureSourcing
     private var detector: DoubleClapDetector
     private var monitor = ClapReliabilityMonitor()
-    private var calibration = ClapCalibrationSession()
+    private var calibration = ClapCalibrationWorkflow()
     private var calibratedNoiseFloor: Double?
+    private let recoveryScheduler: any ClapRecoveryScheduling
+    private let maximumRecoveryAttempts: Int
+    private let recoveryDelay: TimeInterval
+    private var recoveryAttempt = 0
+    private var recoveryTarget: ClapListenerState?
     private let onDoubleClap: () -> Void
     private let onStateChange: (ClapListenerState) -> Void
     private let onCalibration: (ClapCalibrationResult) -> Void
     private let onTestDetection: () -> Void
+    private let onTestStatus: (ClapTestStatus) -> Void
     public private(set) var state: ClapListenerState = .stopped
     public var isListening: Bool { state == .listening }
 
-    public init(configuration: ClapConfiguration, audioSource: (any AudioFeatureSourcing)? = nil, onDoubleClap: @escaping () -> Void, onStateChange: @escaping (ClapListenerState) -> Void = { _ in }, onCalibration: @escaping (ClapCalibrationResult) -> Void = { _ in }, onTestDetection: @escaping () -> Void = {}) {
+    public init(configuration: ClapConfiguration, audioSource: (any AudioFeatureSourcing)? = nil, recoveryScheduler: (any ClapRecoveryScheduling)? = nil, maximumRecoveryAttempts: Int = 2, recoveryDelay: TimeInterval = 0.75, onDoubleClap: @escaping () -> Void, onStateChange: @escaping (ClapListenerState) -> Void = { _ in }, onCalibration: @escaping (ClapCalibrationResult) -> Void = { _ in }, onTestDetection: @escaping () -> Void = {}, onTestStatus: @escaping (ClapTestStatus) -> Void = { _ in }) {
         detector = .init(configuration: configuration)
         source = audioSource ?? AVAudioFeatureSource()
+        self.recoveryScheduler = recoveryScheduler ?? TaskClapRecoveryScheduler()
+        self.maximumRecoveryAttempts = max(0, maximumRecoveryAttempts)
+        self.recoveryDelay = max(0, recoveryDelay)
         self.onDoubleClap = onDoubleClap
         self.onStateChange = onStateChange
         self.onCalibration = onCalibration
         self.onTestDetection = onTestDetection
+        self.onTestStatus = onTestStatus
     }
 
     public static func requestMicrophonePermission() async -> Bool { await AVAudioApplication.requestRecordPermission() }
@@ -99,32 +116,54 @@ public final class LocalClapListener {
     }
 
     public func startExplicitly() throws {
+        recoveryScheduler.cancel(); recoveryAttempt = 0; recoveryTarget = nil
         guard detector.configuration.enabled else { setState(.stopped); return }
         detector = .init(configuration: detector.configuration)
         monitor.reset()
         try startSource(state: .listening)
     }
 
-    public func beginCalibration(duration: TimeInterval = 5) throws {
-        calibration = .init(duration: duration)
-        try startSource(state: .calibrating)
+    public func beginCalibration(duration: TimeInterval = 5, representativeDuration: TimeInterval = 5) throws {
+        recoveryScheduler.cancel(); recoveryAttempt = 0; recoveryTarget = nil
+        calibration = .init(ambientDuration: duration, representativeDuration: representativeDuration)
+        try startSource(state: .calibrating(.ambientNoise))
     }
 
     public func beginTest() throws {
+        recoveryScheduler.cancel(); recoveryAttempt = 0; recoveryTarget = nil
         detector = .init(configuration: detector.configuration)
+        onTestStatus(.listening)
         try startSource(state: .testing)
     }
 
     public func resumeExplicitly() throws { try startExplicitly() }
 
-    public func stop() { source.stop(); setState(.stopped) }
+    public func pauseExplicitly() { recoveryScheduler.cancel(); recoveryTarget = nil; pause(.manualPause) }
+
+    public func cancelCalibration() {
+        guard state.isCalibrating else { return }
+        recoveryScheduler.cancel(); source.stop(); setState(.stopped)
+    }
+
+    public func stopTest() {
+        guard state == .testing else { return }
+        recoveryScheduler.cancel(); source.stop(); onTestStatus(.stopped); setState(.stopped)
+    }
+
+    public func resetCalibration() {
+        calibratedNoiseFloor = nil
+        calibration = .init()
+        if state.isCalibrating { cancelCalibration() }
+    }
+
+    public func stop() { recoveryScheduler.cancel(); recoveryTarget = nil; source.stop(); if state == .testing { onTestStatus(.stopped) }; setState(.stopped) }
 
     private func startSource(state: ClapListenerState) throws {
         source.stop()
         setState(state)
         do { try source.start(onFrame: { [weak self] frame in self?.consume(frame) }, onEvent: { [weak self] event in self?.handle(event) }) }
         catch {
-            if case .paused = self.state {} else { setState(.paused(.audioHardwareUnavailable)) }
+            if case .paused = self.state {} else if case .recovering = self.state {} else { setState(.paused(.audioHardwareUnavailable)) }
             throw error
         }
     }
@@ -137,11 +176,14 @@ public final class LocalClapListener {
                 source.stop()
                 onCalibration(result)
                 setState(result.isUsable ? .calibrated(result) : .paused(.unusableNoise))
+            } else if state != .calibrating(calibration.phase) {
+                setState(.calibrating(calibration.phase))
             }
         case .listening, .testing:
-            let event = detector.consume(frame)
-            if state == .listening, let reason = monitor.observe(frame: frame, event: event, calibratedNoiseFloor: calibratedNoiseFloor) { pause(reason); return }
-            if event == .doubleClap {
+            let analysis = detector.consumeDetailed(frame)
+            if let reason = monitor.observe(frame: frame, event: analysis.event, calibratedNoiseFloor: calibratedNoiseFloor) { pause(reason); return }
+            if state == .testing { reportTest(analysis) }
+            if analysis.event == .doubleClap {
                 if state == .testing { source.stop(); setState(.testSucceeded); onTestDetection() }
                 else { onDoubleClap() }
             }
@@ -151,14 +193,54 @@ public final class LocalClapListener {
 
     private func handle(_ event: AudioFeatureSourceEvent) {
         switch event {
-        case .routeChanged: pause(.audioRouteChanged)
-        case .interrupted: pause(.audioInterrupted)
-        case .hardwareUnavailable: pause(.audioHardwareUnavailable)
+        case .routeChanged: beginRecovery(.audioRouteChanged)
+        case .interrupted: beginRecovery(.audioInterrupted)
+        case .hardwareUnavailable: beginRecovery(.audioHardwareUnavailable)
         case .permissionRevoked: pause(.permissionRevoked)
+        case .unusableInputFormat: beginRecovery(.unusableInputFormat)
+        case .unsafeApplicationState: beginRecovery(.unsafeApplicationState)
         }
     }
 
-    private func pause(_ reason: ClapPauseReason) { source.stop(); setState(.paused(reason)) }
+    private func reportTest(_ analysis: ClapDetectionAnalysis) {
+        if let reason = analysis.rejectionReason {
+            if reason == .detectorInCooldown { onTestStatus(.cooldown(remainingSeconds: analysis.cooldownRemaining ?? 0)) }
+            else { onTestStatus(.rejected(reason)) }
+        }
+        switch analysis.event {
+        case .firstTransient: onTestStatus(.detectedTransient); onTestStatus(.firstClap); onTestStatus(.waitingForSecondClap)
+        case .doubleClap: onTestStatus(.succeeded)
+        default: break
+        }
+    }
+
+    private func beginRecovery(_ reason: ClapPauseReason) {
+        let target: ClapListenerState = state == .listening ? .listening : .stopped
+        source.stop()
+        guard target == .listening, maximumRecoveryAttempts > 0 else { setState(.paused(reason)); return }
+        recoveryTarget = target
+        recoveryAttempt = 0
+        scheduleRecovery(reason)
+    }
+
+    private func scheduleRecovery(_ reason: ClapPauseReason) {
+        guard recoveryAttempt < maximumRecoveryAttempts else { recoveryTarget = nil; setState(.paused(reason)); return }
+        recoveryAttempt += 1
+        setState(.recovering(reason, attempt: recoveryAttempt))
+        recoveryScheduler.schedule(after: recoveryDelay) { [weak self] in self?.attemptRecovery(reason) }
+    }
+
+    private func attemptRecovery(_ reason: ClapPauseReason) {
+        guard recoveryTarget == .listening else { return }
+        do {
+            try source.start(onFrame: { [weak self] frame in self?.consume(frame) }, onEvent: { [weak self] event in self?.handle(event) })
+            recoveryTarget = nil; recoveryAttempt = 0; setState(.listening)
+        } catch {
+            scheduleRecovery(reason)
+        }
+    }
+
+    private func pause(_ reason: ClapPauseReason) { recoveryScheduler.cancel(); recoveryTarget = nil; source.stop(); setState(.paused(reason)) }
     private func setState(_ value: ClapListenerState) { state = value; onStateChange(value) }
 }
 
