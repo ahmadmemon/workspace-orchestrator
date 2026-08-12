@@ -1,0 +1,98 @@
+name: Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated RC tag to publish
+        required: true
+        default: v1.0.0-rc.1
+  push:
+    tags: ['v*-rc.*']
+
+permissions:
+  contents: write
+
+jobs:
+  signed-release:
+    runs-on: macos-14
+    timeout-minutes: 60
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode 15.4
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Resolve release tag
+        id: release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then tag="$GITHUB_REF_NAME"; else tag="$INPUT_TAG"; fi
+          git rev-parse "refs/tags/$tag^{commit}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Require release credentials
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          for value in "$CERTIFICATE" "$CERTIFICATE_PASSWORD" "$NOTARY_APPLE_ID" "$NOTARY_PASSWORD" "$TEAM_ID" "$SIGNING_IDENTITY"; do
+            if [[ -z "$value" ]]; then echo "A required release credential is not configured."; exit 1; fi
+          done
+
+      - name: Import Developer ID certificate
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/workspace-orchestrator.keychain-db"
+          certificate="$RUNNER_TEMP/developer-id.p12"
+          password="$(openssl rand -hex 24)"
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$certificate"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$certificate" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+
+      - name: Configure notarization profile
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: >-
+          xcrun notarytool store-credentials workspace-orchestrator-ci
+          --apple-id "$NOTARY_APPLE_ID"
+          --password "$NOTARY_PASSWORD"
+          --team-id "$TEAM_ID"
+          --keychain "$RUNNER_TEMP/workspace-orchestrator.keychain-db"
+
+      - name: Verify, sign, notarize, and package
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          NOTARY_KEYCHAIN_PROFILE: workspace-orchestrator-ci
+          OUTPUT_DIR: ${{ runner.temp }}/workspace-orchestrator-release
+        run: scripts/build-release.sh
+
+      - name: Assess signed application
+        run: |
+          app="$RUNNER_TEMP/workspace-orchestrator-release/WorkspaceOrchestrator.xcarchive/Products/Applications/Workspace Orchestrator.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$app"
+
+      - name: Publish draft prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh release create "$TAG" "$RUNNER_TEMP"/workspace-orchestrator-release/Workspace-Orchestrator-*.zip "$RUNNER_TEMP"/workspace-orchestrator-release/SHA256SUMS.txt "$RUNNER_TEMP"/workspace-orchestrator-release/dependency-inventory.json "$RUNNER_TEMP"/workspace-orchestrator-release/sbom.spdx.json "$RUNNER_TEMP"/workspace-orchestrator-release/source-revision.txt "$RUNNER_TEMP"/workspace-orchestrator-release/source-tree-state.txt "$RUNNER_TEMP"/workspace-orchestrator-release/toolchain.txt --verify-tag --prerelease --draft --generate-notes --title "Workspace Orchestrator 1.0.0 RC1"

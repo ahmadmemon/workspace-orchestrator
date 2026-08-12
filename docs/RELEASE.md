@@ -18,7 +18,7 @@ xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestrato
 OUTPUT_DIR=/absolute/new/output scripts/build-release.sh
 ```
 
-The package script refuses to overwrite output. It reruns version/security/tests, creates an archive, checks architecture, packages the app, and writes `SHA256SUMS.txt`, `dependency-inventory.json`, `source-revision.txt`, and `toolchain.txt`.
+The package script refuses to overwrite output or package a dirty tree. It reruns version/security/tests, creates an archive, checks architecture, packages the app, and writes `SHA256SUMS.txt`, `dependency-inventory.json`, `sbom.spdx.json`, `source-revision.txt`, `source-tree-state.txt`, and `toolchain.txt`. `ALLOW_DIRTY_RELEASE=1` exists only for local non-publishable verification and records `dirty` in the provenance.
 
 ## Signing and notarization
 
