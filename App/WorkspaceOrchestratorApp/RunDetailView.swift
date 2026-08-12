@@ -17,8 +17,36 @@ struct RunDetailView: View {
                         HStack { Text(record.name).font(.headline); Spacer(); Text(record.status.displayName).font(.caption.weight(.semibold)).foregroundStyle(color(record.status)) }
                         if let state = record.dependencyState { Text(state).font(.caption).foregroundStyle(ObsidianTokens.secondaryText) }
                         if let reason = record.skipReason { Text(reason).foregroundStyle(ObsidianTokens.warning) }
+                        if let retryReason = record.retryReason { Label(retryReason, systemImage: "arrow.clockwise").font(.caption).foregroundStyle(ObsidianTokens.warning) }
                         if let error = record.errorMessage { Text(error).foregroundStyle(ObsidianTokens.failure).textSelection(.enabled) }
-                        if !record.attempts.isEmpty { Text("\(record.attempts.count) attempt\(record.attempts.count == 1 ? "" : "s")").font(.caption.monospaced()).foregroundStyle(ObsidianTokens.mutedText) }
+                        if !record.attempts.isEmpty {
+                            DisclosureGroup("Attempts (\(record.attempts.count))") {
+                                ForEach(record.attempts) { attempt in
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack { Text("Attempt \(attempt.attempt)").font(.caption.bold()); Spacer(); Text(attempt.status.displayName).font(.caption); Text(attempt.endedAt.map { String(format: "%.2fs", $0.timeIntervalSince(attempt.startedAt)) } ?? "in progress").font(.caption.monospacedDigit()) }
+                                        if let reason = attempt.reason { Text(reason).font(.caption).foregroundStyle(ObsidianTokens.secondaryText) }
+                                        if let error = attempt.errorMessage { Text(error).font(.caption).foregroundStyle(ObsidianTokens.failure).textSelection(.enabled) }
+                                    }.padding(.vertical, 3)
+                                }
+                            }.font(.caption)
+                        }
+                        if !record.healthChecks.isEmpty {
+                            DisclosureGroup("Health checks (\(record.healthChecks.count))") {
+                                ForEach(record.healthChecks) { check in
+                                    HStack(alignment: .top) { Text("\(check.kind) #\(check.attempt)").font(.caption.monospaced()); Spacer(); Text(check.status.displayName).font(.caption); if let message = check.message { Text(message).font(.caption).foregroundStyle(ObsidianTokens.secondaryText).textSelection(.enabled) } }.padding(.vertical, 2)
+                                }
+                            }.font(.caption)
+                        }
+                        if let process = record.processResult {
+                            DisclosureGroup("Process result") {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("exit \(process.exitCode) • \(String(format: "%.3fs", process.duration)) • timed out \(process.timedOut ? "yes" : "no") • cancelled \(process.cancelled ? "yes" : "no")").font(.caption.monospaced()).textSelection(.enabled)
+                                    if !process.stdout.isEmpty { Text("stdout").font(.caption.bold()); Text(process.stdout).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+                                    if !process.stderr.isEmpty { Text("stderr").font(.caption.bold()); Text(process.stderr).font(.system(.caption, design: .monospaced)).foregroundStyle(ObsidianTokens.warning).textSelection(.enabled) }
+                                    if record.outputTruncated == true { Label("Stored output was truncated by the configured per-action limit.", systemImage: "scissors").font(.caption).foregroundStyle(ObsidianTokens.warning) }
+                                }.padding(8).background(ObsidianTokens.base, in: RoundedRectangle(cornerRadius: 6))
+                            }.font(.caption)
+                        }
                         if let output = record.outputSummary, !output.isEmpty { Text(output).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding(8).background(ObsidianTokens.base, in: RoundedRectangle(cornerRadius: 6)) }
                     }
                     if let duration = record.duration { Text(String(format: "%.2fs", duration)).font(.caption.monospacedDigit()).foregroundStyle(ObsidianTokens.mutedText) }

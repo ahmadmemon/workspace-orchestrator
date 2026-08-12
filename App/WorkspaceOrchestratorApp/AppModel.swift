@@ -23,11 +23,20 @@ struct ProcessApprovalRequest: Identifiable {
 enum ImportDuplicatePolicy: String, CaseIterable { case replaceExisting, createCopy, skipExisting }
 struct ImportReviewRequest: Identifiable { let id = UUID(); let preview: SceneImportPreview; let sourceURL: URL }
 
+struct HistoricalRunPreview: Identifiable {
+    let id = UUID()
+    let plan: HistoricalRetryPlan
+    let warnings: [String]
+    let blockingIssues: [String]
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var scenes: [Scene] = []
     @Published private(set) var currentRun: SceneRunResult?
     @Published private(set) var runHistory: [SceneRunResult] = []
+    @Published private(set) var historyStorageBytes: Int64 = 0
+    @Published private(set) var corruptHistoryFiles: [String] = []
     @Published private(set) var interruptedRun: SceneRunResult?
     @Published private(set) var integrations: [IntegrationDescriptor] = []
     @Published private(set) var capturableApplications: [RunningApplicationDescriptor] = []
@@ -58,6 +67,7 @@ final class AppModel: ObservableObject {
     private let managedProcesses: any ManagedProcessControlling; private let windowController: any WindowLayoutControlling; private let integrationDiscovery: any IntegrationDiscovering
     private let runningApplicationDiscovery: any RunningApplicationDiscovering
     private let approvalStore: any ProcessApprovalAuthorizing
+    private let keychainStore: any KeychainStoring
     private let launchAtLoginManager: any LaunchAtLoginManaging
     private let notificationManager: any LocalNotificationManaging
     private let uiTesting: Bool
@@ -69,7 +79,7 @@ final class AppModel: ObservableObject {
     var favoriteScenes: [Scene] { scenes.filter(\.favorite) }
     var recentScenes: [Scene] { let ids = runHistory.map(\.sceneID); return scenes.sorted { (ids.firstIndex(of: $0.id) ?? .max) < (ids.firstIndex(of: $1.id) ?? .max) }.prefix(5).map { $0 } }
 
-    init(store: (any SceneStoring)? = nil, executor: SceneExecutor? = nil, historyStore: (any RunHistoryStoring)? = nil) {
+    init(store: (any SceneStoring)? = nil, executor: SceneExecutor? = nil, historyStore: (any RunHistoryStoring)? = nil, keychain: (any KeychainStoring)? = nil) {
         let arguments = ProcessInfo.processInfo.arguments
         let uiTesting = arguments.contains("--ui-testing")
         self.uiTesting = uiTesting
@@ -86,10 +96,11 @@ final class AppModel: ObservableObject {
             integrationDiscovery = UITestIntegrationDiscovery()
             runningApplicationDiscovery = UITestRunningApplicationDiscovery()
             let approvals = UITestProcessApprovalAuthorizer(); approvalStore = approvals
+            let secrets = keychain ?? UITestKeychainStore(); keychainStore = secrets
             launchAtLoginManager = UITestLaunchAtLoginManager()
             notificationManager = UITestNotificationManager()
             let runner = UITestProcessRunner()
-            self.executor = executor ?? SceneExecutor(applicationOpener: UITestApplicationOpener(), urlOpener: UITestURLOpener(), processRunner: runner, fileOpener: UITestFileOpener(), managedProcesses: managed, windowController: windows, approvalAuthorizer: approvals)
+            self.executor = executor ?? SceneExecutor(applicationOpener: UITestApplicationOpener(), urlOpener: UITestURLOpener(), processRunner: runner, fileOpener: UITestFileOpener(), managedProcesses: managed, keychain: secrets, windowController: windows, approvalAuthorizer: approvals)
         } else {
             let managed = ManagedProcessController(); managedProcesses = managed
             let permission = SystemAccessibilityPermissionManager(); accessibilityPermission = permission
@@ -100,10 +111,11 @@ final class AppModel: ObservableObject {
             do { approvals = try JSONProcessApprovalStore.applicationSupportStore() }
             catch { approvals = JSONProcessApprovalStore(fileURL: fallback.appendingPathComponent("process-approvals.json")); presentedError = error.localizedDescription }
             approvalStore = approvals
+            let secrets = keychain ?? SystemKeychainStore(); keychainStore = secrets
             launchAtLoginManager = SystemLaunchAtLoginManager()
             notificationManager = SystemLocalNotificationManager()
             let runner = FoundationProcessRunner()
-            self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: SystemKeychainStore(), windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner), additionalHealthChecker: DockerIntegrationHealthChecker(processRunner: runner))
+            self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: secrets, windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner), additionalHealthChecker: DockerIntegrationHealthChecker(processRunner: runner))
         }
         spokenStatus.enabled = UserDefaults.standard.bool(forKey: "spokenStatusEnabled")
         if !uiTesting { configureGlobalHotKey() }
@@ -125,6 +137,8 @@ final class AppModel: ObservableObject {
                 } else { recovered.append(run) }
             }
             runHistory = recovered.sorted { ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast) }
+            corruptHistoryFiles = try await historyStore.corruptFileNames()
+            historyStorageBytes = try await historyStore.storageUsageBytes()
             let dismissed = Set(UserDefaults.standard.stringArray(forKey: "dismissedInterruptedRunIDs") ?? [])
             interruptedRun = runHistory.first { $0.status == .interrupted && !dismissed.contains($0.id) }
         } catch { presentedError = error.localizedDescription }
@@ -304,7 +318,58 @@ final class AppModel: ObservableObject {
         } catch { presentedError = error.localizedDescription }
     }
     func deleteRun(_ run: SceneRunResult) async { do { try await historyStore.delete(id: run.id); await loadHistory() } catch { presentedError = error.localizedDescription } }
-    func clearRunHistory() async { do { try await historyStore.clear(); runHistory = []; interruptedRun = nil } catch { presentedError = error.localizedDescription } }
+    func deleteRuns(_ runs: [SceneRunResult]) async { do { try await historyStore.delete(ids: runs.map(\.id)); await loadHistory() } catch { presentedError = error.localizedDescription } }
+    func clearRunHistory() async { do { try await historyStore.clear(); interruptedRun = nil; await loadHistory() } catch { presentedError = error.localizedDescription } }
+    func pruneRunHistory() async {
+        do {
+            let result = try await historyStore.prune(referenceDate: Date())
+            await loadHistory()
+            if !result.corruptFileNames.isEmpty { presentedError = "Pruning completed. Corrupt files were preserved: \(result.corruptFileNames.joined(separator: ", "))." }
+        } catch { presentedError = error.localizedDescription }
+    }
+    func historicalRetryPreview(for run: SceneRunResult, scope: HistoricalRetryScope) async -> HistoricalRunPreview? {
+        do {
+            let plan = try HistoricalRunPlanner.retryPlan(for: run, scope: scope)
+            try SceneValidator.validate(plan.scene)
+            var warnings: [String] = []
+            var blocking: [String] = []
+            let installed = Set(integrations.filter(\.installed).map(\.id))
+            for action in plan.scene.actions {
+                switch action {
+                case .openFile(let value):
+                    if !FileManager.default.fileExists(atPath: value.path) { warnings.append("\(action.displayName): path is currently missing: \(value.path)") }
+                case .runProcess(let value):
+                    if !FileManager.default.isExecutableFile(atPath: value.executable) { warnings.append("\(action.displayName): executable is not currently available at \(value.executable)") }
+                    blocking += await missingSecretIssues(actionName: action.displayName, environment: value.environment)
+                case .managedProcess(let value):
+                    if !FileManager.default.isExecutableFile(atPath: value.executable) { warnings.append("\(action.displayName): executable is not currently available at \(value.executable)") }
+                    blocking += await missingSecretIssues(actionName: action.displayName, environment: value.environment)
+                case .windowLayout:
+                    if accessibilityPermission.status() != .granted { warnings.append("\(action.displayName): Accessibility permission is not currently granted.") }
+                case .dockerCompose:
+                    if !installed.contains(.docker) { warnings.append("\(action.displayName): Docker was not detected during the latest integration check.") }
+                case .editorWorkspace:
+                    if !installed.contains(.visualStudioCode) && !installed.contains(.cursor) && !installed.contains(.vscodium) { warnings.append("\(action.displayName): a supported editor was not detected during the latest integration check.") }
+                default: break
+                }
+            }
+            if !plan.assumedSuccessfulDependencyIDs.isEmpty {
+                warnings.append("Previously successful dependencies are assumed satisfied and will not execute: \(plan.assumedSuccessfulDependencyIDs.joined(separator: ", ")).")
+            }
+            warnings.append("Process approvals are checked again against the current executable, arguments, working directory, environment names and references, timeout, retry, and managed-process settings.")
+            return .init(plan: plan, warnings: warnings, blockingIssues: blocking)
+        } catch { presentedError = error.localizedDescription; return nil }
+    }
+    func runHistoricalPreview(_ preview: HistoricalRunPreview) {
+        guard preview.blockingIssues.isEmpty else { presentedError = preview.blockingIssues.joined(separator: "\n"); return }
+        run(preview.plan.scene)
+    }
+    func saveHistoricalSceneCopy(from run: SceneRunResult) async {
+        do {
+            let scene = try HistoricalRunPlanner.sceneCopy(from: run)
+            if await save(scene) { selectedSection = .scenes }
+        } catch { presentedError = error.localizedDescription }
+    }
     func updateGlobalHotKey(keyCode: UInt32, modifiers: UInt32, label: String) {
         let configuration = HotKeyConfiguration(keyCode: keyCode, modifiers: modifiers)
         do { try hotKeyController.register(configuration) { [weak self] in self?.commandPalettePresented = true }; UserDefaults.standard.set(Int(keyCode), forKey: "hotKeyCode"); UserDefaults.standard.set(Int(modifiers), forKey: "hotKeyModifiers"); UserDefaults.standard.set(label, forKey: "hotKeyLabel") }
@@ -365,6 +430,16 @@ final class AppModel: ObservableObject {
         case .showHistory: voicePanelPresented = false; selectedSection = .history
         case .unknown: presentedError = "The voice command was not recognized."
         }
+    }
+
+    private func missingSecretIssues(actionName: String, environment: [String: EnvironmentValue]) async -> [String] {
+        var issues: [String] = []
+        for (name, value) in environment.sorted(by: { $0.key < $1.key }) {
+            guard case .secretReference(let reference) = value else { continue }
+            do { _ = try await keychainStore.read(id: reference) }
+            catch { issues.append("\(actionName): secret reference \(reference) for \(name) is missing from Keychain.") }
+        }
+        return issues
     }
 
     private func seedUITestFixtures() async {
@@ -439,4 +514,11 @@ private actor UITestProcessApprovalAuthorizer: ProcessApprovalAuthorizing {
     func approve(_ action: SceneAction, scope: ProcessApprovalScope) async throws {}
     func consumeApproval(for action: SceneAction) async throws -> Bool { true }
     func revoke(actionID: String) async throws {}
+}
+private actor UITestKeychainStore: KeychainStoring {
+    private var values: [String: Data] = [:]
+    func create(id: String, value: Data) async throws { values[id] = value }
+    func update(id: String, value: Data) async throws { values[id] = value }
+    func read(id: String) async throws -> Data { guard let value = values[id] else { throw KeychainStoreError.notFound }; return value }
+    func delete(id: String) async throws { values[id] = nil }
 }

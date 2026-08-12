@@ -60,22 +60,22 @@ public struct ActionExecutionRecord: Codable, Equatable, Identifiable, Sendable 
     public var startedAt: Date?; public var endedAt: Date?; public var attemptNumber: Int
     public var retryReason: String?; public var dependencyState: String?; public var healthChecks: [HealthCheckRecord]
     public var errorCategory: UserFacingErrorCategory?; public var errorMessage: String?; public var processResult: ProcessExecutionResult?
-    public var outputSummary: String?; public var skipReason: String?; public var ownsResource: Bool; public var attempts: [ActionAttemptRecord]
+    public var outputSummary: String?; public var outputTruncated: Bool?; public var skipReason: String?; public var ownsResource: Bool; public var attempts: [ActionAttemptRecord]
     public var duration: TimeInterval? { guard let startedAt else { return nil }; return (endedAt ?? Date()).timeIntervalSince(startedAt) }
-    public init(id: String, name: String, status: ActionRunStatus = .pending) { self.id = id; self.name = name; self.status = status; startedAt = nil; endedAt = nil; attemptNumber = 0; retryReason = nil; dependencyState = nil; healthChecks = []; errorCategory = nil; errorMessage = nil; processResult = nil; outputSummary = nil; skipReason = nil; ownsResource = false; attempts = [] }
+    public init(id: String, name: String, status: ActionRunStatus = .pending) { self.id = id; self.name = name; self.status = status; startedAt = nil; endedAt = nil; attemptNumber = 0; retryReason = nil; dependencyState = nil; healthChecks = []; errorCategory = nil; errorMessage = nil; processResult = nil; outputSummary = nil; outputTruncated = nil; skipReason = nil; ownsResource = false; attempts = [] }
 }
 
 public struct SceneRunResult: Codable, Equatable, Identifiable, Sendable {
     public var id: String; public let sceneID: String; public let sceneName: String; public let sceneSchemaVersion: Int
     public var status: SceneRunStatus; public var actionRecords: [ActionExecutionRecord]; public var resources: [ResourceRecord]
     public var startedAt: Date?; public var endedAt: Date?; public var failedActionID: String?; public var errorCategory: UserFacingErrorCategory?; public var errorMessage: String?
-    public var appVersion: String; public var interruptionState: String?
+    public var appVersion: String; public var interruptionState: String?; public var sceneSnapshot: Scene?
     public var currentAction: ActionExecutionRecord? { actionRecords.first { [.running, .checking, .retrying, .stopping].contains($0.status) } }
     public var duration: TimeInterval? { guard let startedAt else { return nil }; return (endedAt ?? Date()).timeIntervalSince(startedAt) }
     public var completedActionCount: Int { actionRecords.filter { $0.status.isTerminal }.count }
     public var warningCount: Int { actionRecords.filter { $0.status == .succeededWithWarning }.count }
     public var failureCount: Int { actionRecords.filter { [.failed, .timedOut].contains($0.status) }.count }
-    public init(scene: Scene, id: String = UUID().uuidString, appVersion: String = "unknown") { self.id = id; sceneID = scene.id; sceneName = scene.name; sceneSchemaVersion = scene.schemaVersion; status = .idle; actionRecords = scene.actions.map { .init(id: $0.id, name: $0.displayName) }; resources = []; startedAt = nil; endedAt = nil; failedActionID = nil; errorCategory = nil; errorMessage = nil; self.appVersion = appVersion; interruptionState = nil }
+    public init(scene: Scene, id: String = UUID().uuidString, appVersion: String = "unknown") { self.id = id; sceneID = scene.id; sceneName = scene.name; sceneSchemaVersion = scene.schemaVersion; status = .idle; actionRecords = scene.actions.map { .init(id: $0.id, name: $0.displayName) }; resources = []; startedAt = nil; endedAt = nil; failedActionID = nil; errorCategory = nil; errorMessage = nil; self.appVersion = appVersion; interruptionState = nil; sceneSnapshot = scene }
 
     public func interruptedAfterRelaunch(at date: Date = Date()) -> SceneRunResult {
         guard status.isActive else { return self }
