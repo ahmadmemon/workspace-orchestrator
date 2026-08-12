@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct WorkspaceOrchestratorApp: App {
     @StateObject private var model = AppModel()
+    @AppStorage("appearanceMode") private var appearanceMode = "Obsidian"
 
     var body: some Scene {
         MenuBarExtra {
@@ -16,7 +17,7 @@ struct WorkspaceOrchestratorApp: App {
         Window("Workspace Orchestrator", id: "dashboard") {
             DashboardView(model: model)
                 .frame(minWidth: 980, minHeight: 680)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(appearanceMode == "System" ? nil : .dark)
         }
         .defaultSize(width: 1180, height: 780)
 

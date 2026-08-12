@@ -43,7 +43,8 @@ This is the recoverable plan for `1.0.0-rc.1` on `feat/v1-release-candidate`. A 
 - [x] Centralize Obsidian semantic tokens and Workspace Core visual state.
 - [x] Implement onboarding, dashboard/library/builder, current run, searchable/status-filtered history, capture, integrations, permissions, settings tabs, diagnostics, About, command palette, overlay, menu-bar controls, import review, and process approval sheets.
 - [x] Complete requested History detail/date/retry/export/retention controls with immutable stored snapshots, current preflight, redacted diagnostics, corruption preservation, and deterministic local-calendar tests.
-- [ ] Complete remaining configurable Settings behaviors and double-clap calibration/test/automatic-pause controls.
+- [x] Complete persisted configurable Settings, execution defaults, history/privacy controls, non-revealing Keychain management, scoped reset, and allow-listed import/export.
+- [ ] Complete double-clap calibration/test/automatic-pause controls.
 - [x] Add keyboard/native semantic controls, textual status, reduced-motion/transparency support, and accessibility labels for primary controls.
 - [x] Generate an original icon master and complete Xcode asset set.
 

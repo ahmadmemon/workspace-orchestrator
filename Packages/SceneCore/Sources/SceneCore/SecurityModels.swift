@@ -34,7 +34,10 @@ public protocol ProcessApprovalAuthorizing: Sendable {
     func approve(_ action: SceneAction, scope: ProcessApprovalScope) async throws
     func consumeApproval(for action: SceneAction) async throws -> Bool
     func revoke(actionID: String) async throws
+    func clearAll() async throws
 }
+
+public extension ProcessApprovalAuthorizing { func clearAll() async throws {} }
 
 public struct RejectingProcessApprovalAuthorizer: ProcessApprovalAuthorizing {
     public init() {}
@@ -94,6 +97,11 @@ public actor JSONProcessApprovalStore: ProcessApprovalAuthorizing {
 
     public func revoke(actionID: String) async throws {
         try write(try load().filter { $0.actionID != actionID })
+    }
+
+    public func clearAll() async throws {
+        onceFingerprints.removeAll()
+        try write([])
     }
 
     private func load() throws -> [ProcessApproval] {

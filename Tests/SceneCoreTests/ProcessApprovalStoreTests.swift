@@ -3,6 +3,18 @@ import XCTest
 @testable import SceneCore
 
 final class ProcessApprovalStoreTests: XCTestCase {
+    func testClearAllRevokesPersistedExactApprovals() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = JSONProcessApprovalStore(fileURL: directory.appendingPathComponent("approvals.json"))
+        let action = SceneAction.runProcess(.init(id: "clear-me", executable: "/usr/bin/true"))
+        try await store.approve(action, scope: .exactAction)
+        let approvedBeforeClear = try await store.isApproved(action)
+        XCTAssertTrue(approvedBeforeClear)
+        try await store.clearAll()
+        let approvedAfterClear = try await store.isApproved(action)
+        XCTAssertFalse(approvedAfterClear)
+    }
     func testApproveOnceIsConsumedExactlyOnce() async throws {
         let store = makeStore()
         let action = SceneAction.runProcess(.init(id: "process", executable: "/usr/bin/printf", arguments: ["hello"]))

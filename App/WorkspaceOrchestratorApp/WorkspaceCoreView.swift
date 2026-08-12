@@ -4,6 +4,7 @@ import SwiftUI
 struct WorkspaceCoreView: View {
     let status: SceneRunStatus; let progress: Double; var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("reduceCustomEffects") private var reduceCustomEffects = false
     private var color: Color { switch status { case .ready: ObsidianTokens.success; case .readyWithWarnings: ObsidianTokens.warning; case .failed: ObsidianTokens.failure; case .cancelled, .interrupted, .stopped: ObsidianTokens.mutedText; default: ObsidianTokens.cyan } }
     private var active: Bool { status.isActive }
     var body: some View {
@@ -15,9 +16,9 @@ struct WorkspaceCoreView: View {
             Image(systemName: symbol).font(.system(size: compact ? 15 : 34, weight: .semibold)).foregroundStyle(color)
         }
         .frame(width: compact ? 54 : 190, height: compact ? 54 : 190)
-        .shadow(color: active ? color.opacity(0.25) : .clear, radius: 16)
-        .opacity(active && !reduceMotion ? 0.92 : 1)
-        .animation(reduceMotion ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.26), value: status)
+        .shadow(color: active && !reduceCustomEffects ? color.opacity(0.25) : .clear, radius: 16)
+        .opacity(active && !reduceMotion && !reduceCustomEffects ? 0.92 : 1)
+        .animation(reduceMotion || reduceCustomEffects ? nil : .easeInOut(duration: 0.26), value: status)
         .accessibilityElement(children: .ignore).accessibilityLabel("Workspace Core").accessibilityValue("\(status.displayName), \(Int(progress * 100)) percent of actions complete")
     }
     private var symbol: String { switch status { case .ready: "checkmark"; case .readyWithWarnings: "exclamationmark"; case .failed: "xmark"; case .stopping, .stopped: "stop.fill"; case .cancelled, .interrupted: "pause.fill"; default: "square.grid.2x2.fill" } }

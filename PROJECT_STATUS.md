@@ -3,7 +3,7 @@
 - **Project name:** Workspace Orchestrator
 - **Current milestone:** V1 Release Candidate — final local completion and publication pass in progress
 - **Current branch:** `feat/v1-release-candidate`
-- **Overall project completion estimate:** 95%
+- **Overall project completion estimate:** 96%
 - **Release candidate version:** `1.0.0-rc.1` (build `1`)
 - **Product status:** Unsigned, unnotarized V1 release candidate
 - **GitHub repository:** https://github.com/ahmadmemon/workspace-orchestrator
@@ -15,6 +15,7 @@
 - Evolved the local scene format to schema V2 with atomic V1 migration, source backups, strict validation, trust state, typed actions, activation/deactivation plans, and backwards-conscious decoding.
 - Added deterministic dependency scheduling, bounded parallelism, retries, conditions, failure policies, typed health checks, cancellation, deactivation, managed-resource ownership, bounded history, and interrupted-run recovery.
 - Completed snapshot-backed Run History with scene/status/local-calendar date filtering, full action details, safe full or failed-and-dependent retry previews, current validation/approval/secret checks, scene-copy recovery, bounded redacted diagnostic export, storage reporting, selective deletion, configurable retention primitives, and corruption-preserving pruning.
+- Completed persisted Settings behavior for startup/default scene/menu actions, theme/effects/compact rows/sounds, activation choices, new-scene/action execution defaults, live history retention, non-revealing Keychain reference management, permission/integration state, allow-listed settings transfer, scoped reset, and confirmation-gated factory reset.
 - Added protocol-backed local integrations for applications, URLs/browsers, files/folders, structured executables, VS Code-family editors, terminals, tmux, Docker Compose, Shortcuts, and window layouts.
 - Added reviewed workspace capture, normalized multi-display restoration, missing-display fallback, honest integration discovery, process approvals, Keychain references, redaction, and reviewed scene import/export.
 - Added local activation by global shortcut, opt-in double clap, and explicit on-device voice command sessions, plus spoken status, notifications, launch at login, an overlay, and transparent permission controls.
@@ -24,7 +25,6 @@
 
 ## Remaining release gates
 
-- Complete the remaining requested Settings behavior: default scene/menu-bar choices, animation/compact/sound controls, clap action and confirmation policy, editable execution defaults, and privacy/Keychain management controls.
 - Complete the requested double-clap calibration/test flow and automatic pause behavior for unreliable or unavailable microphone conditions.
 - Ahmad must perform the documented visual, keyboard, VoiceOver, permission, real-integration, multi-display, audio, and clean-machine acceptance checklist.
 - GitHub CLI authentication must be repaired before the branch can be pushed, the required unmerged pull request opened, milestone issue checklists updated, and hosted CI inspected.
@@ -45,7 +45,7 @@
 - `scripts/verify-version.sh`: passed (`Version verified: 1.0.0-rc.1 (1)`)
 - `swift build --target SceneCore`: passed
 - `swift build`: passed
-- `swift test`: 97 tests executed, 0 failures, 0 unexpected failures
+- `swift test`: 100 tests executed, 0 failures, 0 unexpected failures
 - `xcodebuild -quiet -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData-UITests test`: 4 tests, 0 result issues
 - Unsigned arm64 Debug app build: passed
 - Unsigned universal Release app build: passed

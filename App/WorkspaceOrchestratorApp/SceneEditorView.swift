@@ -6,9 +6,10 @@ struct SceneEditorView: View {
     @State private var draft: SceneCore.Scene
     @State private var selection: ActionSelection?
     @State private var validationMessage: String?
+    let executionDefaults: WorkspaceExecutionDefaults
     let save: (SceneCore.Scene) async -> Void
 
-    init(scene: SceneCore.Scene, save: @escaping (SceneCore.Scene) async -> Void) { _draft = State(initialValue: scene); self.save = save }
+    init(scene: SceneCore.Scene, executionDefaults: WorkspaceExecutionDefaults = .init(), save: @escaping (SceneCore.Scene) async -> Void) { _draft = State(initialValue: scene); self.executionDefaults = executionDefaults; self.save = save }
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
@@ -75,7 +76,7 @@ struct SceneEditorView: View {
     private func payload(_ selection: ActionSelection, _ value: String, update: @escaping (String) -> SceneAction) -> Binding<String> { .init(get: { value }, set: { replace(selection, with: update($0)) }) }
 
     private func addMenu(deactivation: Bool) -> some View { Menu("Add Action", systemImage: "plus") { add("Open Application", .openApplication(.init(bundleIdentifier: "com.apple.TextEdit")), deactivation); add("Browser Workspace", .openURL(.init(url: "https://example.com")), deactivation); add("Open File or Folder", .openFile(.init(path: "/")), deactivation); add("One-Shot Process", .runProcess(.init(executable: "/usr/bin/printf")), deactivation); add("Managed Process", .managedProcess(.init(executable: "/bin/sleep", singleInstanceKey: UUID().uuidString)), deactivation); add("Wait", .wait(.init(durationSeconds: 1)), deactivation); add("Editor Workspace", .editorWorkspace(.init(editor: .visualStudioCode, projectPath: "/")), deactivation); add("Terminal Workspace", .terminalWorkspace(.init(workingDirectory: "/")), deactivation); add("Docker Compose", .dockerCompose(.init(projectDirectory: "/")), deactivation); add("macOS Shortcut", .shortcut(.init(name: "")), deactivation) } }
-    private func add(_ title: String, _ action: SceneAction, _ deactivation: Bool) -> some View { Button(title) { if deactivation { draft.deactivationActions.append(action); selection = .stop(action.id) } else { draft.actions.append(action); selection = .start(action.id) } } }
+    private func add(_ title: String, _ action: SceneAction, _ deactivation: Bool) -> some View { Button(title) { let configured = executionDefaults.applying(to: action); if deactivation { draft.deactivationActions.append(configured); selection = .stop(configured.id) } else { draft.actions.append(configured); selection = .start(configured.id) } } }
     private func actionSymbol(_ action: SceneAction) -> String { switch action { case .openApplication: "app"; case .openURL: "safari"; case .openFile: "folder"; case .runProcess: "terminal"; case .managedProcess: "server.rack"; case .wait: "timer"; case .editorWorkspace: "chevron.left.forwardslash.chevron.right"; case .terminalWorkspace: "macwindow"; case .dockerCompose: "shippingbox"; case .shortcut: "bolt.square"; case .windowLayout: "rectangle.on.rectangle" } }
 }
 

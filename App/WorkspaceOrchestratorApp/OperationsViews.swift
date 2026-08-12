@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 
 struct RunHistoryView: View {
     @ObservedObject var model: AppModel
+    @AppStorage("compactRows") private var compactRows = false
     @State private var query = ""
     @State private var selectedSceneID: String?
     @State private var selectedStatus: SceneRunStatus?
@@ -74,7 +75,7 @@ struct RunHistoryView: View {
                             StatusBadge(text: run.status.displayName, color: run.status.color, symbol: run.status.symbol)
                             Image(systemName: "chevron.right").foregroundStyle(ObsidianTokens.mutedText)
                         }.contentShape(Rectangle())
-                    }.buttonStyle(.plain).padding(.vertical, 6).listRowBackground(ObsidianTokens.panel)
+                    }.buttonStyle(.plain).padding(.vertical, compactRows ? 1 : 6).listRowBackground(ObsidianTokens.panel)
                         .contextMenu { Button("Delete Run", role: .destructive) { Task { await model.deleteRun(run) } } }
                 }.scrollContentBackground(.hidden)
             }
