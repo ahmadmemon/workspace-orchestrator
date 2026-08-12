@@ -41,7 +41,8 @@ This is the recoverable plan for `1.0.0-rc.1` on `feat/v1-release-candidate`. A 
 ## 5. Native experience
 
 - [x] Centralize Obsidian semantic tokens and Workspace Core visual state.
-- [x] Implement onboarding, dashboard/library/builder, current run/details, history, capture, integrations, permissions, settings, diagnostics, About, command palette, overlay, menu-bar controls, import review, and process approval sheets.
+- [x] Implement onboarding, dashboard/library/builder, current run, searchable/status-filtered history, capture, integrations, permissions, settings tabs, diagnostics, About, command palette, overlay, menu-bar controls, import review, and process approval sheets.
+- [ ] Complete requested History detail/date/retry/export/retention controls, remaining configurable Settings behaviors, and double-clap calibration/test/automatic-pause controls.
 - [x] Add keyboard/native semantic controls, textual status, reduced-motion/transparency support, and accessibility labels for primary controls.
 - [x] Generate an original icon master and complete Xcode asset set.
 

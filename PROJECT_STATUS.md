@@ -1,9 +1,9 @@
 # Project Status
 
 - **Project name:** Workspace Orchestrator
-- **Current milestone:** V1 Release Candidate — local implementation and automated verification complete
+- **Current milestone:** V1 Release Candidate — local core implementation and automated verification complete; secondary experience gaps remain
 - **Current branch:** `feat/v1-release-candidate`
-- **Overall project completion estimate:** 98%
+- **Overall project completion estimate:** 94%
 - **Release candidate version:** `1.0.0-rc.1` (build `1`)
 - **Product status:** Unsigned, unnotarized V1 release candidate
 - **GitHub repository:** https://github.com/ahmadmemon/workspace-orchestrator
@@ -17,12 +17,15 @@
 - Added protocol-backed local integrations for applications, URLs/browsers, files/folders, structured executables, VS Code-family editors, terminals, tmux, Docker Compose, Shortcuts, and window layouts.
 - Added reviewed workspace capture, normalized multi-display restoration, missing-display fallback, honest integration discovery, process approvals, Keychain references, redaction, and reviewed scene import/export.
 - Added local activation by global shortcut, opt-in double clap, and explicit on-device voice command sessions, plus spoken status, notifications, launch at login, an overlay, and transparent permission controls.
-- Completed the native Obsidian Command Center experience: onboarding, menu bar, Workspace Core, dashboard, scene library/builder, current-run details, history, capture, integrations, permissions, settings, diagnostics, command palette, import review, approval flows, and an original icon.
+- Completed the native Obsidian Command Center foundation: onboarding, menu bar, Workspace Core, dashboard, scene library/builder, current-run details, searchable/status-filtered history, capture, integrations, permissions, settings tabs, diagnostics, command palette, import review, approval flows, and an original icon.
 - Added release-candidate CI/release workflows, security and version gates, universal packaging, checksums, dependency inventory, SPDX SBOM, source provenance, and comprehensive user/developer/release documentation.
 - Expanded automated coverage from the 28-test baseline to 92 Swift package tests plus 4 deterministic XCUITests. All 96 tests pass locally with no skipped or flaky tests observed.
 
 ## Remaining release gates
 
+- Complete the remaining requested History controls: date filtering, run-detail inspection, safe retry from a stored snapshot, redacted export, and configurable retention.
+- Complete the remaining requested Settings behavior: default scene/menu-bar choices, animation/compact/sound controls, clap action and confirmation policy, editable execution defaults, and privacy/Keychain management controls.
+- Complete the requested double-clap calibration/test flow and automatic pause behavior for unreliable or unavailable microphone conditions.
 - Ahmad must perform the documented visual, keyboard, VoiceOver, permission, real-integration, multi-display, audio, and clean-machine acceptance checklist.
 - GitHub CLI authentication must be repaired before the branch can be pushed, the required unmerged pull request opened, milestone issue checklists updated, and hosted CI inspected.
 - Developer ID credentials and an Apple notarization profile are required to sign, notarize, staple, and publish a distributable release candidate.
