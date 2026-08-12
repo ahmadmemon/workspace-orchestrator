@@ -31,6 +31,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var interruptedRun: SceneRunResult?
     @Published private(set) var integrations: [IntegrationDescriptor] = []
     @Published private(set) var capturableApplications: [RunningApplicationDescriptor] = []
+    @Published private(set) var capturedBundleIdentifiers = Set<String>()
     @Published private(set) var capturedWindows: [CapturedWindow] = []
     @Published var selectedSection: AppSection = .dashboard
     @Published var presentedError: String?
@@ -183,9 +184,20 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(Array(dismissed), forKey: "dismissedInterruptedRunIDs")
         interruptedRun = nil
     }
-    func capture(bundleIdentifiers: Set<String>) async { do { capturedWindows = try await windowController.capture(bundleIdentifiers: bundleIdentifiers) } catch { presentedError = error.localizedDescription } }
-    func sceneFromCapture(name: String) async {
-        guard !capturedWindows.isEmpty else { return }; let apps = Dictionary(grouping: capturedWindows, by: \.bundleIdentifier).keys.sorted().map { SceneAction.openApplication(.init(bundleIdentifier: $0)) }; let layout = SceneAction.windowLayout(.init(placements: capturedWindows.map(\.placement), configuration: .init(dependencies: apps.map(\.id), failurePolicy: .continueDegraded, idempotencyPolicy: .reapply))); _ = await save(Scene(name: name, description: "Reviewed workspace capture", actions: apps + [layout]))
+    func capture(bundleIdentifiers: Set<String>) async {
+        capturedBundleIdentifiers = bundleIdentifiers
+        do { capturedWindows = try await windowController.capture(bundleIdentifiers: bundleIdentifiers) }
+        catch { capturedWindows = []; presentedError = error.localizedDescription }
+    }
+    func selectCaptureApplications(_ bundleIdentifiers: Set<String>) { capturedBundleIdentifiers = bundleIdentifiers; capturedWindows = capturedWindows.filter { bundleIdentifiers.contains($0.bundleIdentifier) } }
+    func sceneFromCapture(name: String, manualURLs: [String] = []) async {
+        let bundleIDs = capturedBundleIdentifiers.union(capturedWindows.map(\.bundleIdentifier))
+        guard !bundleIDs.isEmpty || !manualURLs.isEmpty else { presentedError = "Select at least one application or add an HTTP(S) URL."; return }
+        let apps = bundleIDs.sorted().map { SceneAction.openApplication(.init(bundleIdentifier: $0)) }
+        let urls = manualURLs.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.map { SceneAction.openURL(.init(url: $0.trimmingCharacters(in: .whitespacesAndNewlines))) }
+        var actions = apps + urls
+        if !capturedWindows.isEmpty { actions.append(.windowLayout(.init(placements: capturedWindows.map(\.placement), configuration: .init(dependencies: apps.map(\.id), failurePolicy: .continueDegraded, idempotencyPolicy: .reapply)))) }
+        if await save(Scene(name: name, description: "Reviewed workspace capture", actions: actions)) { capturedWindows = []; capturedBundleIdentifiers = [] }
     }
     func exportScenes(_ selected: [Scene], to url: URL) async { do { try SceneArchiveService.export(selected, appVersion: appVersion).write(to: url, options: .atomic) } catch { presentedError = error.localizedDescription } }
     func previewImport(from url: URL) async {
@@ -216,6 +228,7 @@ final class AppModel: ObservableObject {
     }
     func cancelImport() { importReviewRequest = nil }
     func completeOnboarding() { UserDefaults.standard.set(true, forKey: "onboardingCompleted"); onboardingPresented = false }
+    func resetOnboarding() { UserDefaults.standard.set(false, forKey: "onboardingCompleted"); onboardingPresented = true }
     var microphonePermissionStatus: ActivationPermissionStatus { LocalClapListener.microphonePermissionStatus }
     var speechPermissionStatus: ActivationPermissionStatus { OnDeviceVoiceRecognizer.speechPermissionStatus }
     func setClapEnabled(_ enabled: Bool) async {
@@ -227,7 +240,8 @@ final class AppModel: ObservableObject {
         var permitted = microphonePermissionStatus == .granted
         if !permitted { permitted = await LocalClapListener.requestMicrophonePermission() }
         guard permitted else { presentedError = "Microphone permission was not granted. Double-clap detection remains off."; return }
-        let configuration = ClapConfiguration(enabled: true)
+        let sensitivity = UserDefaults.standard.object(forKey: "clapSensitivity") as? Double ?? 0.65
+        let configuration = ClapConfiguration(enabled: true, sensitivity: sensitivity)
         let listener = LocalClapListener(configuration: configuration) { [weak self] in self?.commandPalettePresented = true }
         do { try listener.startExplicitly(); clapListener = listener; clapListening = true; UserDefaults.standard.set(true, forKey: "clapEnabled") }
         catch { presentedError = error.localizedDescription; clapListening = false }
@@ -240,7 +254,9 @@ final class AppModel: ObservableObject {
         var speechAllowed = speechPermissionStatus == .granted
         if !speechAllowed { speechAllowed = await OnDeviceVoiceRecognizer.requestAuthorization() }
         guard speechAllowed else { presentedError = "Speech Recognition permission was not granted. No cloud fallback will be used."; return }
-        let configuration = VoiceConfiguration(enabled: true)
+        let locale = UserDefaults.standard.string(forKey: "voiceLocaleIdentifier") ?? Locale.current.identifier
+        let phrase = UserDefaults.standard.string(forKey: "voiceActivationPhrase") ?? "Workspace online"
+        let configuration = VoiceConfiguration(enabled: true, localeIdentifier: locale, activationPhrase: phrase)
         let sessionID = UUID(); voiceSessionID = sessionID; voiceListening = true; voicePanelPresented = true; voiceTranscript = ""; voiceSuggestedScene = nil; voiceAmbiguousScenes = []
         do {
             try voiceRecognizer.recognizeOnce(configuration: configuration) { [weak self] transcript, isFinal in
@@ -266,6 +282,31 @@ final class AppModel: ObservableObject {
             if !allowed { presentedError = "Notification permission was not granted." }
         } catch { presentedError = error.localizedDescription }
     }
+    func deleteRun(_ run: SceneRunResult) async { do { try await historyStore.delete(id: run.id); await loadHistory() } catch { presentedError = error.localizedDescription } }
+    func clearRunHistory() async { do { try await historyStore.clear(); runHistory = []; interruptedRun = nil } catch { presentedError = error.localizedDescription } }
+    func updateGlobalHotKey(keyCode: UInt32, modifiers: UInt32, label: String) {
+        let configuration = HotKeyConfiguration(keyCode: keyCode, modifiers: modifiers)
+        do { try hotKeyController.register(configuration) { [weak self] in self?.commandPalettePresented = true }; UserDefaults.standard.set(Int(keyCode), forKey: "hotKeyCode"); UserDefaults.standard.set(Int(modifiers), forKey: "hotKeyModifiers"); UserDefaults.standard.set(label, forKey: "hotKeyLabel") }
+        catch { presentedError = error.localizedDescription }
+    }
+    var diagnosticsReport: String {
+        let installed = integrations.filter(\.installed).map(\.displayName).joined(separator: ", ")
+        return """
+        Workspace Orchestrator diagnostics
+        Version: \(appVersion) (\(buildNumber))
+        macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)
+        Scenes: \(scenes.count)
+        Run history: \(runHistory.count)
+        Current status: \(currentRun?.status.rawValue ?? "idle")
+        Accessibility: \(accessibilityPermission.status().rawValue)
+        Microphone: \(microphonePermissionStatus.rawValue)
+        Speech: \(speechPermissionStatus.rawValue)
+        Notifications: \(notificationPermissionStatus.rawValue)
+        Launch at login: \(launchAtLoginStatus.rawValue)
+        Installed integrations: \(installed.isEmpty ? "none detected" : installed)
+        """
+    }
+    func copyDiagnostics() { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(diagnosticsReport, forType: .string) }
     var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0-rc.1" }
     var buildNumber: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1" }
     private func accept(_ update: SceneRunResult) async {
@@ -280,7 +321,9 @@ final class AppModel: ObservableObject {
         }
     }
     private func configureGlobalHotKey() {
-        do { try hotKeyController.register(.init()) { [weak self] in self?.commandPalettePresented = true } }
+        let keyCode = UInt32(UserDefaults.standard.object(forKey: "hotKeyCode") as? Int ?? 49)
+        let modifiers = UInt32(UserDefaults.standard.object(forKey: "hotKeyModifiers") as? Int ?? 2_304)
+        do { try hotKeyController.register(.init(keyCode: keyCode, modifiers: modifiers)) { [weak self] in self?.commandPalettePresented = true } }
         catch { presentedError = error.localizedDescription }
     }
     private func finishVoiceCommand(_ transcript: String) {
