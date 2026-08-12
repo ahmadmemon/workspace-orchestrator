@@ -1,11 +1,15 @@
 import AppKit
 import SceneCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DashboardView: View {
     @ObservedObject var model: AppModel
     @State private var editingScene: SceneCore.Scene?
     @State private var scenePendingDeletion: SceneCore.Scene?
+    @State private var importingScenes = false
+    @State private var exportingScenes = false
+    @State private var exportDocument: SceneArchiveDocument?
     var body: some View {
         NavigationSplitView {
             List(selection: $model.selectedSection) {
@@ -27,18 +31,22 @@ struct DashboardView: View {
             }.background(ObsidianTokens.base).foregroundStyle(ObsidianTokens.primaryText)
         }
         .toolbar {
-                ToolbarItemGroup { Button { editingScene = SceneCore.Scene(name: "New Scene") } label: { Label("New Scene", systemImage: "plus") }; Button { model.commandPalettePresented = true } label: { Label("Command Palette", systemImage: "command") }.keyboardShortcut(.space, modifiers: [.option, .command]) }
+                ToolbarItemGroup { Button { editingScene = SceneCore.Scene(name: "New Scene") } label: { Label("New Scene", systemImage: "plus") }; Button { importingScenes = true } label: { Label("Import", systemImage: "square.and.arrow.down") }; Button { prepareExport() } label: { Label("Export All", systemImage: "square.and.arrow.up") }.disabled(model.scenes.isEmpty); Button { model.commandPalettePresented = true } label: { Label("Command Palette", systemImage: "command") }.keyboardShortcut(.space, modifiers: [.option, .command]) }
         }
         .sheet(item: $editingScene) { scene in SceneEditorView(scene: scene) { saved in if await model.save(saved) { editingScene = nil } }.frame(minWidth: 820, minHeight: 680) }
         .sheet(isPresented: $model.commandPalettePresented) { CommandPaletteView(model: model).frame(width: 620, height: 460) }
         .sheet(isPresented: $model.onboardingPresented) { OnboardingView(model: model).interactiveDismissDisabled(false).frame(width: 700, height: 560) }
         .sheet(item: $model.processApprovalRequest) { request in ProcessApprovalView(model: model, request: request) }
         .sheet(isPresented: $model.voicePanelPresented) { VoiceCommandView(model: model) }
+        .sheet(item: $model.importReviewRequest) { request in ImportReviewView(model: model, request: request) }
+        .fileImporter(isPresented: $importingScenes, allowedContentTypes: [.workspaceOrchestratorArchive, .json], allowsMultipleSelection: false) { result in if case .success(let urls) = result, let url = urls.first { Task { await model.previewImport(from: url) } } else if case .failure(let error) = result { model.presentedError = error.localizedDescription } }
+        .fileExporter(isPresented: $exportingScenes, document: exportDocument, contentType: .workspaceOrchestratorArchive, defaultFilename: "Workspace-Orchestrator-Scenes.workspaceorchestrator") { result in if case .failure(let error) = result { model.presentedError = error.localizedDescription }; exportDocument = nil }
         .confirmationDialog("Delete this scene?", isPresented: Binding(get: { scenePendingDeletion != nil }, set: { if !$0 { scenePendingDeletion = nil } }), titleVisibility: .visible, presenting: scenePendingDeletion) { scene in Button("Delete “\(scene.name)”", role: .destructive) { Task { await model.delete(scene) } }; Button("Cancel", role: .cancel) {} } message: { _ in Text("The scene definition will be removed. Historical run snapshots remain until their retention date.") }
         .alert("Workspace Orchestrator", isPresented: Binding(get: { model.presentedError != nil }, set: { if !$0 { model.presentedError = nil } })) { Button("OK") { model.presentedError = nil } } message: { Text(model.presentedError ?? "Unknown error") }
         .overlay(alignment: .center) { if model.overlayPresented, let run = model.currentRun { ActivationOverlay(run: run, cancel: model.cancelCurrentRun) { model.overlayPresented = false }.transition(.opacity) } }
         .task { if UserDefaults.standard.object(forKey: "onboardingCompleted") == nil { model.onboardingPresented = true } }
     }
+    private func prepareExport() { do { exportDocument = .init(data: try SceneArchiveService.export(model.scenes, appVersion: model.appVersion)); exportingScenes = true } catch { model.presentedError = error.localizedDescription } }
 }
 
 private struct CommandCenterDashboard: View {

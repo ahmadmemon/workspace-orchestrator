@@ -20,6 +20,9 @@ struct ProcessApprovalRequest: Identifiable {
     let deactivating: Bool
 }
 
+enum ImportDuplicatePolicy: String, CaseIterable { case replaceExisting, createCopy, skipExisting }
+struct ImportReviewRequest: Identifiable { let id = UUID(); let preview: SceneImportPreview; let sourceURL: URL }
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var scenes: [Scene] = []
@@ -36,6 +39,7 @@ final class AppModel: ObservableObject {
     @Published var overlayPresented = false
     @Published var onboardingPresented = !UserDefaults.standard.bool(forKey: "onboardingCompleted")
     @Published var processApprovalRequest: ProcessApprovalRequest?
+    @Published var importReviewRequest: ImportReviewRequest?
     @Published private(set) var clapListening = false
     @Published private(set) var voiceListening = false
     @Published var voicePanelPresented = false
@@ -184,7 +188,33 @@ final class AppModel: ObservableObject {
         guard !capturedWindows.isEmpty else { return }; let apps = Dictionary(grouping: capturedWindows, by: \.bundleIdentifier).keys.sorted().map { SceneAction.openApplication(.init(bundleIdentifier: $0)) }; let layout = SceneAction.windowLayout(.init(placements: capturedWindows.map(\.placement), configuration: .init(dependencies: apps.map(\.id), failurePolicy: .continueDegraded, idempotencyPolicy: .reapply))); _ = await save(Scene(name: name, description: "Reviewed workspace capture", actions: apps + [layout]))
     }
     func exportScenes(_ selected: [Scene], to url: URL) async { do { try SceneArchiveService.export(selected, appVersion: appVersion).write(to: url, options: .atomic) } catch { presentedError = error.localizedDescription } }
-    func importArchive(from url: URL) async -> SceneImportPreview? { do { let preview = try SceneArchiveService.previewImport(Data(contentsOf: url)); for scene in preview.scenes { try await store.save(scene) }; await loadScenes(); return preview } catch { presentedError = error.localizedDescription; return nil } }
+    func previewImport(from url: URL) async {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        do { importReviewRequest = .init(preview: try SceneArchiveService.previewImport(Data(contentsOf: url)), sourceURL: url) }
+        catch { presentedError = error.localizedDescription }
+    }
+    func confirmImport(duplicatePolicy: ImportDuplicatePolicy) async {
+        guard let request = importReviewRequest else { return }
+        do {
+            for original in request.preview.scenes {
+                var scene = original
+                let duplicate = scenes.contains { $0.id == scene.id }
+                if duplicate {
+                    switch duplicatePolicy {
+                    case .replaceExisting: break
+                    case .createCopy: scene.id = UUID().uuidString; scene.name += " (Imported)"
+                    case .skipExisting: continue
+                    }
+                }
+                scene.trustState = .importedUntrusted
+                try await store.save(scene)
+            }
+            importReviewRequest = nil
+            await loadScenes()
+        } catch { presentedError = error.localizedDescription }
+    }
+    func cancelImport() { importReviewRequest = nil }
     func completeOnboarding() { UserDefaults.standard.set(true, forKey: "onboardingCompleted"); onboardingPresented = false }
     var microphonePermissionStatus: ActivationPermissionStatus { LocalClapListener.microphonePermissionStatus }
     var speechPermissionStatus: ActivationPermissionStatus { OnDeviceVoiceRecognizer.speechPermissionStatus }
