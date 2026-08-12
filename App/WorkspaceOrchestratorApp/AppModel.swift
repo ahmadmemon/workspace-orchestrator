@@ -17,6 +17,7 @@ struct ProcessApprovalRequest: Identifiable {
     let scene: SceneCore.Scene
     let actions: [SceneAction]
     let requiresImportTrustReview: Bool
+    let deactivating: Bool
 }
 
 @MainActor
@@ -35,14 +36,24 @@ final class AppModel: ObservableObject {
     @Published var overlayPresented = false
     @Published var onboardingPresented = !UserDefaults.standard.bool(forKey: "onboardingCompleted")
     @Published var processApprovalRequest: ProcessApprovalRequest?
+    @Published private(set) var clapListening = false
+    @Published private(set) var voiceListening = false
+    @Published var voicePanelPresented = false
+    @Published private(set) var voiceTranscript = ""
+    @Published private(set) var voiceSuggestedScene: String?
+    @Published private(set) var voiceAmbiguousScenes: [String] = []
 
     let accessibilityPermission: any AccessibilityPermissionManaging
     let hotKeyController = GlobalHotKeyController()
+    private let voiceRecognizer = OnDeviceVoiceRecognizer()
+    private let spokenStatus = SpokenStatusController()
     private let store: any SceneStoring; private let historyStore: any RunHistoryStoring; private let executor: SceneExecutor
     private let managedProcesses: any ManagedProcessControlling; private let windowController: any WindowLayoutControlling; private let integrationDiscovery: any IntegrationDiscovering
     private let runningApplicationDiscovery: any RunningApplicationDiscovering
     private let approvalStore: any ProcessApprovalAuthorizing
     private var runTask: Task<Void, Never>?
+    private var clapListener: LocalClapListener?
+    private var voiceSessionID: UUID?
 
     var isRunning: Bool { currentRun?.status.isActive == true }
     var favoriteScenes: [Scene] { scenes.filter(\.favorite) }
@@ -63,6 +74,8 @@ final class AppModel: ObservableObject {
         approvalStore = approvals
         let runner = FoundationProcessRunner()
         self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: SystemKeychainStore(), windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner))
+        spokenStatus.enabled = UserDefaults.standard.bool(forKey: "spokenStatusEnabled")
+        configureGlobalHotKey()
         Task { await refresh() }
     }
 
@@ -90,7 +103,7 @@ final class AppModel: ObservableObject {
     func installDemoScene() async { guard !scenes.contains(where: { $0.name == "Workspace Orchestrator Demo" }) else { presentedError = "The demo scene is already installed."; return }; _ = await save(.demo()) }
     func run(_ scene: Scene) {
         guard !isRunning, processApprovalRequest == nil else { return }
-        Task { await prepareToRun(scene) }
+        Task { await prepareToRun(scene, deactivating: false) }
     }
     func approvePendingRun(scope: ProcessApprovalScope, trustImportedScene: Bool) async {
         guard let request = processApprovalRequest else { return }
@@ -104,31 +117,39 @@ final class AppModel: ObservableObject {
                 await loadScenes()
             }
             processApprovalRequest = nil
-            startRun(scene)
+            startRun(scene, deactivating: request.deactivating)
         } catch { presentedError = error.localizedDescription }
     }
     func cancelPendingRun() { processApprovalRequest = nil }
-    private func prepareToRun(_ scene: Scene) async {
+    private func prepareToRun(_ scene: Scene, deactivating: Bool) async {
         do {
             var unapproved: [SceneAction] = []
-            for action in scene.actions where action.requiresProcessApproval {
+            let actions = deactivating ? scene.deactivationActions : scene.actions
+            for action in actions where action.requiresProcessApproval {
                 if !(try await approvalStore.isApproved(action)) { unapproved.append(action) }
             }
             if scene.trustState == .importedUntrusted || !unapproved.isEmpty {
-                processApprovalRequest = .init(scene: scene, actions: unapproved, requiresImportTrustReview: scene.trustState == .importedUntrusted)
+                processApprovalRequest = .init(scene: scene, actions: unapproved, requiresImportTrustReview: scene.trustState == .importedUntrusted, deactivating: deactivating)
                 return
             }
-            startRun(scene)
+            startRun(scene, deactivating: deactivating)
         } catch { presentedError = error.localizedDescription }
     }
-    private func startRun(_ scene: Scene) {
+    private func startRun(_ scene: Scene, deactivating: Bool) {
         guard !isRunning else { return }; selectedSection = .currentRun; overlayPresented = true
         runTask = Task { [executor] in
-            let final = await executor.execute(scene: scene) { [weak self] update in await self?.accept(update) }
+            let final: SceneRunResult
+            if deactivating { final = await executor.deactivate(scene: scene) { [weak self] update in await self?.accept(update) } }
+            else { final = await executor.execute(scene: scene) { [weak self] update in await self?.accept(update) } }
             currentRun = final; try? await historyStore.save(final); await loadHistory(); runTask = nil
         }
     }
     func cancelCurrentRun() { runTask?.cancel() }
+    func stopCurrentScene() {
+        if isRunning { cancelCurrentRun(); return }
+        guard let run = currentRun, let scene = scenes.first(where: { $0.id == run.sceneID }) else { presentedError = "There is no current scene to stop."; return }
+        Task { await prepareToRun(scene, deactivating: true) }
+    }
     func stopManagedResources() async {
         guard let run = currentRun else { return }; for resource in run.resources where resource.kind == "managedProcess" && resource.ownership == .created { try? await managedProcesses.stop(identifier: resource.identifier, graceSeconds: 5) }
     }
@@ -159,11 +180,72 @@ final class AppModel: ObservableObject {
     func exportScenes(_ selected: [Scene], to url: URL) async { do { try SceneArchiveService.export(selected, appVersion: appVersion).write(to: url, options: .atomic) } catch { presentedError = error.localizedDescription } }
     func importArchive(from url: URL) async -> SceneImportPreview? { do { let preview = try SceneArchiveService.previewImport(Data(contentsOf: url)); for scene in preview.scenes { try await store.save(scene) }; await loadScenes(); return preview } catch { presentedError = error.localizedDescription; return nil } }
     func completeOnboarding() { UserDefaults.standard.set(true, forKey: "onboardingCompleted"); onboardingPresented = false }
+    var microphonePermissionStatus: ActivationPermissionStatus { LocalClapListener.microphonePermissionStatus }
+    var speechPermissionStatus: ActivationPermissionStatus { OnDeviceVoiceRecognizer.speechPermissionStatus }
+    func setClapEnabled(_ enabled: Bool) async {
+        if !enabled {
+            clapListener?.stop(); clapListener = nil; clapListening = false
+            UserDefaults.standard.set(false, forKey: "clapEnabled")
+            return
+        }
+        var permitted = microphonePermissionStatus == .granted
+        if !permitted { permitted = await LocalClapListener.requestMicrophonePermission() }
+        guard permitted else { presentedError = "Microphone permission was not granted. Double-clap detection remains off."; return }
+        let configuration = ClapConfiguration(enabled: true)
+        let listener = LocalClapListener(configuration: configuration) { [weak self] in self?.commandPalettePresented = true }
+        do { try listener.startExplicitly(); clapListener = listener; clapListening = true; UserDefaults.standard.set(true, forKey: "clapEnabled") }
+        catch { presentedError = error.localizedDescription; clapListening = false }
+    }
+    func beginVoiceCommand() async {
+        guard !voiceListening else { return }
+        var microphoneAllowed = microphonePermissionStatus == .granted
+        if !microphoneAllowed { microphoneAllowed = await LocalClapListener.requestMicrophonePermission() }
+        guard microphoneAllowed else { presentedError = "Microphone permission is required for an explicit voice command session."; return }
+        var speechAllowed = speechPermissionStatus == .granted
+        if !speechAllowed { speechAllowed = await OnDeviceVoiceRecognizer.requestAuthorization() }
+        guard speechAllowed else { presentedError = "Speech Recognition permission was not granted. No cloud fallback will be used."; return }
+        let configuration = VoiceConfiguration(enabled: true)
+        let sessionID = UUID(); voiceSessionID = sessionID; voiceListening = true; voicePanelPresented = true; voiceTranscript = ""; voiceSuggestedScene = nil; voiceAmbiguousScenes = []
+        do {
+            try voiceRecognizer.recognizeOnce(configuration: configuration) { [weak self] transcript, isFinal in
+                Task { @MainActor in guard let self, self.voiceSessionID == sessionID else { return }; self.voiceTranscript = transcript; if isFinal { self.finishVoiceCommand(transcript) } }
+            } onError: { [weak self] message in Task { @MainActor in self?.voiceListening = false; self?.presentedError = message } }
+            Task { [weak self] in try? await Task.sleep(for: .seconds(configuration.timeoutSeconds)); guard let self, self.voiceSessionID == sessionID, self.voiceListening else { return }; self.finishVoiceCommand(self.voiceTranscript) }
+        } catch { voiceListening = false; presentedError = error.localizedDescription }
+    }
+    func cancelVoiceCommand() { voiceRecognizer.stop(); voiceSessionID = nil; voiceListening = false; voicePanelPresented = false }
+    func confirmVoiceScene(named name: String) { voiceRecognizer.stop(); voiceSessionID = nil; voiceListening = false; voicePanelPresented = false; if let scene = scenes.first(where: { $0.name == name }) { run(scene) } }
+    func setSpokenStatusEnabled(_ enabled: Bool) { spokenStatus.enabled = enabled; UserDefaults.standard.set(enabled, forKey: "spokenStatusEnabled") }
     var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0-rc.1" }
     var buildNumber: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1" }
     private func accept(_ update: SceneRunResult) async {
+        let previousStatus = currentRun?.status
         currentRun = update
         do { try await historyStore.save(update) }
         catch { presentedError = error.localizedDescription }
+        if previousStatus != update.status { spokenStatus.speak(sceneName: update.sceneName, status: update.status, warningCount: update.warningCount, failedAction: update.failedActionID.flatMap { id in update.actionRecords.first(where: { $0.id == id })?.name }) }
+    }
+    private func configureGlobalHotKey() {
+        do { try hotKeyController.register(.init()) { [weak self] in self?.commandPalettePresented = true } }
+        catch { presentedError = error.localizedDescription }
+    }
+    private func finishVoiceCommand(_ transcript: String) {
+        voiceRecognizer.stop(); voiceSessionID = nil; voiceListening = false
+        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { presentedError = "No voice command was recognized."; return }
+        switch VoiceCommandParser.parse(transcript) {
+        case .runScene(let query):
+            switch VoiceCommandParser.match(sceneQuery: query, sceneNames: scenes.map(\.name)) {
+            case .exact(let name): confirmVoiceScene(named: name)
+            case .suggested(let name, _): voiceSuggestedScene = name
+            case .ambiguous(let names): voiceAmbiguousScenes = names
+            case .none: presentedError = "No scene matched “\(query)”."
+            }
+        case .stopCurrent: voicePanelPresented = false; stopCurrentScene()
+        case .cancelCurrent: voicePanelPresented = false; cancelCurrentRun()
+        case .showDashboard: voicePanelPresented = false; selectedSection = .dashboard
+        case .showScenes: voicePanelPresented = false; selectedSection = .scenes
+        case .showHistory: voicePanelPresented = false; selectedSection = .history
+        case .unknown: presentedError = "The voice command was not recognized."
+        }
     }
 }

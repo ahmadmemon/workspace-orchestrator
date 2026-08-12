@@ -33,6 +33,7 @@ struct DashboardView: View {
         .sheet(isPresented: $model.commandPalettePresented) { CommandPaletteView(model: model).frame(width: 620, height: 460) }
         .sheet(isPresented: $model.onboardingPresented) { OnboardingView(model: model).interactiveDismissDisabled(false).frame(width: 700, height: 560) }
         .sheet(item: $model.processApprovalRequest) { request in ProcessApprovalView(model: model, request: request) }
+        .sheet(isPresented: $model.voicePanelPresented) { VoiceCommandView(model: model) }
         .confirmationDialog("Delete this scene?", isPresented: Binding(get: { scenePendingDeletion != nil }, set: { if !$0 { scenePendingDeletion = nil } }), titleVisibility: .visible, presenting: scenePendingDeletion) { scene in Button("Delete “\(scene.name)”", role: .destructive) { Task { await model.delete(scene) } }; Button("Cancel", role: .cancel) {} } message: { _ in Text("The scene definition will be removed. Historical run snapshots remain until their retention date.") }
         .alert("Workspace Orchestrator", isPresented: Binding(get: { model.presentedError != nil }, set: { if !$0 { model.presentedError = nil } })) { Button("OK") { model.presentedError = nil } } message: { Text(model.presentedError ?? "Unknown error") }
         .overlay(alignment: .center) { if model.overlayPresented, let run = model.currentRun { ActivationOverlay(run: run, cancel: model.cancelCurrentRun) { model.overlayPresented = false }.transition(.opacity) } }

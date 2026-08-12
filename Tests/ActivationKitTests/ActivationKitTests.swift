@@ -2,6 +2,18 @@ import XCTest
 @testable import ActivationKit
 
 final class ActivationKitTests: XCTestCase {
+    func testDefaultHotKeyIsOptionCommandSpace() {
+        let configuration = HotKeyConfiguration()
+        XCTAssertEqual(configuration.keyCode, 49)
+        XCTAssertEqual(configuration.modifiers, 2_048 | 256)
+        XCTAssertTrue(configuration.enabled)
+    }
+
+    func testVoiceParserControlCommands() {
+        XCTAssertEqual(VoiceCommandParser.parse("stop current workspace"), .stopCurrent)
+        XCTAssertEqual(VoiceCommandParser.parse("cancel current run"), .cancelCurrent)
+        XCTAssertEqual(VoiceCommandParser.parse("show history"), .showHistory)
+    }
     func testValidDoubleClap() { var detector = DoubleClapDetector(configuration: enabled()); XCTAssertEqual(detector.consume(clap(1)), .firstTransient); XCTAssertEqual(detector.consume(clap(1.3)), .doubleClap) }
     func testSingleClapDoesNotActivate() { var detector = DoubleClapDetector(configuration: enabled()); XCTAssertEqual(detector.consume(clap(1)), .firstTransient); XCTAssertEqual(detector.consume(noise(2)), .none) }
     func testTooFastClapsAreRejected() { var detector = DoubleClapDetector(configuration: enabled()); _ = detector.consume(clap(1)); XCTAssertEqual(detector.consume(clap(1.03)), .rejected) }

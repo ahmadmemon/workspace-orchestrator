@@ -13,7 +13,7 @@ struct ProcessApprovalView: View {
                     .foregroundStyle(ObsidianTokens.warning)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(request.requiresImportTrustReview ? "Review Imported Scene" : "Approve Executable Actions")
+                    Text(request.requiresImportTrustReview ? "Review Imported Scene" : (request.deactivating ? "Approve Stop Actions" : "Approve Executable Actions"))
                         .font(.title2.bold())
                     Text("Nothing runs until you approve this exact configuration. Secret values are never shown or included in the fingerprint.")
                         .foregroundStyle(ObsidianTokens.secondaryText)
