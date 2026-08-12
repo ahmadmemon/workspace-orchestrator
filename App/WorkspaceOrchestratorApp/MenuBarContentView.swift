@@ -5,64 +5,23 @@ import SwiftUI
 struct MenuBarContentView: View {
     @ObservedObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
-
+    private var status: SceneRunStatus { model.currentRun?.status ?? .idle }
+    private var progress: Double { guard let run = model.currentRun, !run.actionRecords.isEmpty else { return 0 }; return Double(run.completedActionCount) / Double(run.actionRecords.count) }
     var body: some View {
-        Text("Workspace Orchestrator")
-            .font(.headline)
-
-        if model.scenes.isEmpty {
-            Text("No saved scenes")
-                .foregroundStyle(.secondary)
-        } else {
-            Section("Available Scenes") {
-                ForEach(model.scenes) { scene in
-                    Button {
-                        model.run(scene)
-                    } label: {
-                        Label(scene.name, systemImage: "play.fill")
-                    }
-                    .disabled(model.isRunning)
-                }
-            }
-        }
-
-        if let run = model.currentRun {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { WorkspaceCoreView(status: status, progress: progress, compact: true); VStack(alignment: .leading) { Text(model.currentRun?.sceneName ?? "Workspace Orchestrator").font(.headline); Text(status.displayName).font(.caption).foregroundStyle(status.color) }; Spacer() }
             Divider()
-            Text("Status: \(run.status.displayName)")
-            if let action = run.currentAction {
-                Text("Current: \(action.name)")
-            }
-        }
-
-        if model.isRunning {
-            Button("Cancel Current Run", role: .destructive) {
-                model.cancelCurrentRun()
-            }
-        }
-
-        Divider()
-        Button("Open Dashboard") {
-            openWindow(id: "dashboard")
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        Button("Manage Scenes / Settings") {
-            openWindow(id: "dashboard")
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        Divider()
-        Button("Quit Workspace Orchestrator") { NSApp.terminate(nil) }
+            if !model.favoriteScenes.isEmpty { Text("Favorites").font(.caption.bold()).foregroundStyle(.secondary); ForEach(model.favoriteScenes.prefix(5)) { scene in Button { model.run(scene) } label: { Label(scene.name, systemImage: "play.fill") }.disabled(model.isRunning || scene.trustState == .importedUntrusted) } }
+            if model.isRunning { Button("Cancel Current Run", role: .destructive) { model.cancelCurrentRun() } }
+            Divider()
+            Button("Open Dashboard") { open(.dashboard) }
+            Button("Open Command Palette") { openWindow(id: "dashboard"); model.commandPalettePresented = true; NSApp.activate(ignoringOtherApps: true) }
+            Button("Run History") { open(.history) }
+            Button("Permissions") { open(.permissions) }
+            Divider()
+            SettingsLink { Text("Settings") }
+            Button("Quit Workspace Orchestrator") { NSApp.terminate(nil) }
+        }.padding(14).frame(width: 330).background(ObsidianTokens.elevated)
     }
-}
-
-extension SceneRunStatus {
-    var displayName: String { rawValue.capitalized }
-}
-
-extension ActionRunStatus {
-    var displayName: String {
-        switch self {
-        case .timedOut: "Timed Out"
-        default: rawValue.capitalized
-        }
-    }
+    private func open(_ section: AppSection) { model.selectedSection = section; openWindow(id: "dashboard"); NSApp.activate(ignoringOtherApps: true) }
 }

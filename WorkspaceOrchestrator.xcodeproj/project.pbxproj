@@ -15,6 +15,15 @@
 		A10000000000000000000007 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* SettingsView.swift */; };
 		A10000000000000000000008 /* SceneCore in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000001 /* SceneCore */; };
 		A10000000000000000000009 /* MacAutomation in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000002 /* MacAutomation */; };
+		A1000000000000000000000A /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* DesignSystem.swift */; };
+		A1000000000000000000000B /* WorkspaceCoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* WorkspaceCoreView.swift */; };
+		A1000000000000000000000C /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* CommandPaletteView.swift */; };
+		A1000000000000000000000D /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* OnboardingView.swift */; };
+		A1000000000000000000000E /* ActivationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* ActivationOverlay.swift */; };
+		A1000000000000000000000F /* OperationsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* OperationsViews.swift */; };
+		A10000000000000000000010 /* ActivationKit in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000004 /* ActivationKit */; };
+		A10000000000000000000011 /* WorkspaceIntegrations in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000005 /* WorkspaceIntegrations */; };
+		A10000000000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +35,13 @@
 		A20000000000000000000006 /* SceneEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneEditorView.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A20000000000000000000008 /* Workspace Orchestrator.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Workspace Orchestrator.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2000000000000000000000A /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		A2000000000000000000000B /* WorkspaceCoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceCoreView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000C /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000D /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000E /* ActivationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationOverlay.swift; sourceTree = "<group>"; };
+		A2000000000000000000000F /* OperationsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationsViews.swift; sourceTree = "<group>"; };
+		A20000000000000000000010 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -35,6 +51,8 @@
 			files = (
 				A10000000000000000000008 /* SceneCore in Frameworks */,
 				A10000000000000000000009 /* MacAutomation in Frameworks */,
+				A10000000000000000000010 /* ActivationKit in Frameworks */,
+				A10000000000000000000011 /* WorkspaceIntegrations in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -59,6 +77,13 @@
 				A20000000000000000000005 /* RunDetailView.swift */,
 				A20000000000000000000006 /* SceneEditorView.swift */,
 				A20000000000000000000007 /* SettingsView.swift */,
+				A2000000000000000000000A /* DesignSystem.swift */,
+				A2000000000000000000000B /* WorkspaceCoreView.swift */,
+				A2000000000000000000000C /* CommandPaletteView.swift */,
+				A2000000000000000000000D /* OnboardingView.swift */,
+				A2000000000000000000000E /* ActivationOverlay.swift */,
+				A2000000000000000000000F /* OperationsViews.swift */,
+				A20000000000000000000010 /* Assets.xcassets */,
 			);
 			path = App/WorkspaceOrchestratorApp;
 			sourceTree = SOURCE_ROOT;
@@ -86,6 +111,8 @@
 			packageProductDependencies = (
 				A90000000000000000000001 /* SceneCore */,
 				A90000000000000000000002 /* MacAutomation */,
+				A90000000000000000000004 /* ActivationKit */,
+				A90000000000000000000005 /* WorkspaceIntegrations */,
 			);
 			productName = "Workspace Orchestrator";
 			productReference = A20000000000000000000008 /* Workspace Orchestrator.app */;
@@ -117,7 +144,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		A60000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000012 /* Assets.xcassets in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -132,6 +159,12 @@
 				A10000000000000000000005,
 				A10000000000000000000006,
 				A10000000000000000000007,
+				A1000000000000000000000A,
+				A1000000000000000000000B,
+				A1000000000000000000000C,
+				A1000000000000000000000D,
+				A1000000000000000000000E,
+				A1000000000000000000000F,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -144,14 +177,17 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Workspace Orchestrator listens for an opt-in double clap while the detector is enabled; audio is never stored.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Workspace Orchestrator recognizes explicit voice commands on this Mac without cloud fallback.";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.0-rc.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ahmadmemon.WorkspaceOrchestrator;
 				PRODUCT_NAME = "Workspace Orchestrator";
 				ONLY_ACTIVE_ARCH = YES;
@@ -164,14 +200,17 @@
 		B10000000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Workspace Orchestrator listens for an opt-in double clap while the detector is enabled; audio is never stored.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Workspace Orchestrator recognizes explicit voice commands on this Mac without cloud fallback.";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.0-rc.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ahmadmemon.WorkspaceOrchestrator;
 				PRODUCT_NAME = "Workspace Orchestrator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -193,6 +232,8 @@
 /* Begin XCSwiftPackageProductDependency section */
 		A90000000000000000000001 /* SceneCore */ = {isa = XCSwiftPackageProductDependency; package = A90000000000000000000003; productName = SceneCore; };
 		A90000000000000000000002 /* MacAutomation */ = {isa = XCSwiftPackageProductDependency; package = A90000000000000000000003; productName = MacAutomation; };
+		A90000000000000000000004 /* ActivationKit */ = {isa = XCSwiftPackageProductDependency; package = A90000000000000000000003; productName = ActivationKit; };
+		A90000000000000000000005 /* WorkspaceIntegrations */ = {isa = XCSwiftPackageProductDependency; package = A90000000000000000000003; productName = WorkspaceIntegrations; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A70000000000000000000001 /* Project object */;
