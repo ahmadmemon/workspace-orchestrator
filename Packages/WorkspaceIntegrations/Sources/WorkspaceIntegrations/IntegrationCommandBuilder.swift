@@ -56,6 +56,15 @@ public struct IntegrationCommandBuilder: Sendable {
         return .init(executable: executable, arguments: args, workingDirectory: value.projectDirectory, timeoutSeconds: value.configuration.timeoutSeconds ?? 120)
     }
 
+    public func dockerStatus(_ value: DockerComposeAction, service: String) throws -> ProcessRequest {
+        guard let executable = locator.executable(for: .docker) else { throw IntegrationCommandError.missingTool("Docker CLI") }
+        try safeIdentifier(service, field: "Docker service")
+        var args = ["compose", "--project-directory", value.projectDirectory]
+        if let file = value.composeFile { args += ["--file", file] }
+        args += ["ps", "--format", "json", service]
+        return .init(executable: executable, arguments: args, workingDirectory: value.projectDirectory, timeoutSeconds: min(value.configuration.timeoutSeconds ?? 30, 30))
+    }
+
     public func shortcut(_ value: ShortcutAction) throws -> ProcessRequest {
         guard let executable = locator.executable(for: .shortcuts) else { throw IntegrationCommandError.missingTool("macOS Shortcuts") }
         try safe(value.name, field: "shortcut name")

@@ -22,7 +22,29 @@ final class IntegrationCommandBuilderTests: XCTestCase {
         let action = DockerComposeAction(projectDirectory: "/tmp/project", stopPolicy: .down, removeVolumes: true)
         XCTAssertThrowsError(try builder.dockerStop(action, destructiveConfirmed: false))
     }
+    func testDockerStatusUsesStructuredArguments() throws {
+        let action = DockerComposeAction(projectDirectory: "/tmp/project", composeFile: "/tmp/project/compose.yml")
+        let request = try builder.dockerStatus(action, service: "web")
+        XCTAssertEqual(request.arguments, ["compose", "--project-directory", "/tmp/project", "--file", "/tmp/project/compose.yml", "ps", "--format", "json", "web"])
+    }
+    func testDockerHealthUsesOwnedComposeIdentity() async throws {
+        let runner = QueueProcessRunner(outputs: ["started", #"[{"Service":"web","State":"running","Health":"healthy"}]"#])
+        let action = SceneAction.dockerCompose(.init(id: "compose", projectDirectory: "/tmp/project", services: ["web"]))
+        let executor = WorkspaceIntegrationExecutor(processRunner: runner, builder: builder)
+        let outcome = try await executor.execute(action)
+        let checker = DockerIntegrationHealthChecker(processRunner: runner, builder: builder)
+        let message = try await checker.check(.docker(.init(composeActionID: "compose", service: "web")), resources: outcome.resources)
+        XCTAssertEqual(message, "Docker service is healthy")
+        let requestCount = await runner.requests.count
+        XCTAssertEqual(requestCount, 2)
+    }
     func testShortcutRejectsControlCharacters() { XCTAssertThrowsError(try builder.shortcut(.init(name: "Bad\0Name"))) }
 }
 
 private struct FakeLocator: IntegrationExecutableLocating { func executable(for kind: IntegrationKind) -> String? { switch kind { case .tmux: "/opt/homebrew/bin/tmux"; case .docker: "/usr/local/bin/docker"; case .shortcuts: "/usr/bin/shortcuts"; default: nil } } }
+
+private actor QueueProcessRunner: ProcessRunning {
+    private var outputs: [String]; private(set) var requests: [ProcessRequest] = []
+    init(outputs: [String]) { self.outputs = outputs }
+    func run(_ request: ProcessRequest) async throws -> ProcessExecutionResult { requests.append(request); let output = outputs.isEmpty ? "" : outputs.removeFirst(); return .init(stdout: output, stderr: "", exitCode: 0, startedAt: Date(), endedAt: Date(), timedOut: false, cancelled: false) }
+}

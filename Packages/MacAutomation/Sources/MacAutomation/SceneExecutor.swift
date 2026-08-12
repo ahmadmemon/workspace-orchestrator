@@ -5,9 +5,9 @@ import SceneCore
 public struct SceneExecutor: Sendable {
     public typealias UpdateHandler = @Sendable (SceneRunResult) async -> Void
     private let engine: OrchestrationEngine
-    public init(applicationOpener: any ApplicationOpening, urlOpener: any URLOpening, processRunner: any ProcessRunning, fileOpener: (any FileOpening)? = nil, managedProcesses: (any ManagedProcessControlling)? = nil, keychain: (any KeychainStoring)? = nil, windowController: (any WindowLayoutControlling)? = nil, approvalAuthorizer: any ProcessApprovalAuthorizing = RejectingProcessApprovalAuthorizer(), additionalActionExecutor: (any ActionExecuting)? = nil) {
+    public init(applicationOpener: any ApplicationOpening, urlOpener: any URLOpening, processRunner: any ProcessRunning, fileOpener: (any FileOpening)? = nil, managedProcesses: (any ManagedProcessControlling)? = nil, keychain: (any KeychainStoring)? = nil, windowController: (any WindowLayoutControlling)? = nil, approvalAuthorizer: any ProcessApprovalAuthorizing = RejectingProcessApprovalAuthorizer(), additionalActionExecutor: (any ActionExecuting)? = nil, additionalHealthChecker: (any HealthCheckExecuting)? = nil) {
         let executor = NativeActionExecutor(applicationOpener: applicationOpener, urlOpener: urlOpener, processRunner: processRunner, fileOpener: fileOpener, managedProcesses: managedProcesses, keychain: keychain, windowController: windowController, approvalAuthorizer: approvalAuthorizer, additionalActionExecutor: additionalActionExecutor)
-        engine = OrchestrationEngine(actionExecutor: executor, healthChecker: NativeHealthChecker(managedProcesses: managedProcesses))
+        engine = OrchestrationEngine(actionExecutor: executor, healthChecker: NativeHealthChecker(managedProcesses: managedProcesses, additionalHealthChecker: additionalHealthChecker))
     }
     public func execute(scene: Scene, onUpdate: UpdateHandler? = nil) async -> SceneRunResult { await engine.execute(scene: scene, onUpdate: onUpdate) }
     public func deactivate(scene: Scene, onUpdate: UpdateHandler? = nil) async -> SceneRunResult { await engine.execute(scene: scene, deactivating: true, onUpdate: onUpdate) }

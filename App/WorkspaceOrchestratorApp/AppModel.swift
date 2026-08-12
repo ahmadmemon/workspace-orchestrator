@@ -83,7 +83,7 @@ final class AppModel: ObservableObject {
         launchAtLoginManager = SystemLaunchAtLoginManager()
         notificationManager = SystemLocalNotificationManager()
         let runner = FoundationProcessRunner()
-        self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: SystemKeychainStore(), windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner))
+        self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: SystemKeychainStore(), windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner), additionalHealthChecker: DockerIntegrationHealthChecker(processRunner: runner))
         spokenStatus.enabled = UserDefaults.standard.bool(forKey: "spokenStatusEnabled")
         configureGlobalHotKey()
         Task { await refresh() }
