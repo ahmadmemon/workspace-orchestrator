@@ -24,6 +24,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var scenes: [Scene] = []
     @Published private(set) var currentRun: SceneRunResult?
     @Published private(set) var runHistory: [SceneRunResult] = []
+    @Published private(set) var interruptedRun: SceneRunResult?
     @Published private(set) var integrations: [IntegrationDescriptor] = []
     @Published private(set) var capturableApplications: [RunningApplicationDescriptor] = []
     @Published private(set) var capturedWindows: [CapturedWindow] = []
@@ -68,7 +69,22 @@ final class AppModel: ObservableObject {
     func refresh() async { await loadScenes(); await loadHistory(); integrations = await integrationDiscovery.discover(); refreshCapturableApplications() }
     func refreshCapturableApplications() { capturableApplications = runningApplicationDiscovery.discoverCapturableApplications(excludingBundleIdentifier: Bundle.main.bundleIdentifier) }
     func loadScenes() async { isLoading = true; defer { isLoading = false }; do { scenes = try await store.loadScenes() } catch { presentedError = error.localizedDescription } }
-    func loadHistory() async { do { runHistory = try await historyStore.loadRuns() } catch { presentedError = error.localizedDescription } }
+    func loadHistory() async {
+        do {
+            let loaded = try await historyStore.loadRuns()
+            var recovered: [SceneRunResult] = []
+            for run in loaded {
+                if run.status.isActive, run.id != currentRun?.id {
+                    let interrupted = run.interruptedAfterRelaunch()
+                    try await historyStore.save(interrupted)
+                    recovered.append(interrupted)
+                } else { recovered.append(run) }
+            }
+            runHistory = recovered.sorted { ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast) }
+            let dismissed = Set(UserDefaults.standard.stringArray(forKey: "dismissedInterruptedRunIDs") ?? [])
+            interruptedRun = runHistory.first { $0.status == .interrupted && !dismissed.contains($0.id) }
+        } catch { presentedError = error.localizedDescription }
+    }
     func save(_ scene: Scene) async -> Bool { var updated = scene; updated.updatedAt = Date(); do { try SceneValidator.validate(updated); try await store.save(updated); await loadScenes(); return true } catch { presentedError = error.localizedDescription; return false } }
     func delete(_ scene: Scene) async { do { try await store.deleteScene(id: scene.id); await loadScenes() } catch { presentedError = error.localizedDescription } }
     func installDemoScene() async { guard !scenes.contains(where: { $0.name == "Workspace Orchestrator Demo" }) else { presentedError = "The demo scene is already installed."; return }; _ = await save(.demo()) }
@@ -116,6 +132,26 @@ final class AppModel: ObservableObject {
     func stopManagedResources() async {
         guard let run = currentRun else { return }; for resource in run.resources where resource.kind == "managedProcess" && resource.ownership == .created { try? await managedProcesses.stop(identifier: resource.identifier, graceSeconds: 5) }
     }
+    func stopInterruptedResources() async {
+        guard let run = interruptedRun else { return }
+        for resource in run.resources where resource.kind == "managedProcess" && resource.ownership == .created {
+            do { try await managedProcesses.stop(identifier: resource.identifier, graceSeconds: 5) }
+            catch { presentedError = error.localizedDescription; return }
+        }
+        dismissInterruptedRun()
+    }
+    func retryInterruptedRun() {
+        guard let interruptedRun, let scene = scenes.first(where: { $0.id == interruptedRun.sceneID }) else { presentedError = "The interrupted run's scene is no longer available."; return }
+        dismissInterruptedRun()
+        run(scene)
+    }
+    func dismissInterruptedRun() {
+        guard let id = interruptedRun?.id else { return }
+        var dismissed = Set(UserDefaults.standard.stringArray(forKey: "dismissedInterruptedRunIDs") ?? [])
+        dismissed.insert(id)
+        UserDefaults.standard.set(Array(dismissed), forKey: "dismissedInterruptedRunIDs")
+        interruptedRun = nil
+    }
     func capture(bundleIdentifiers: Set<String>) async { do { capturedWindows = try await windowController.capture(bundleIdentifiers: bundleIdentifiers) } catch { presentedError = error.localizedDescription } }
     func sceneFromCapture(name: String) async {
         guard !capturedWindows.isEmpty else { return }; let apps = Dictionary(grouping: capturedWindows, by: \.bundleIdentifier).keys.sorted().map { SceneAction.openApplication(.init(bundleIdentifier: $0)) }; let layout = SceneAction.windowLayout(.init(placements: capturedWindows.map(\.placement), configuration: .init(dependencies: apps.map(\.id), failurePolicy: .continueDegraded, idempotencyPolicy: .reapply))); _ = await save(Scene(name: name, description: "Reviewed workspace capture", actions: apps + [layout]))
@@ -125,5 +161,9 @@ final class AppModel: ObservableObject {
     func completeOnboarding() { UserDefaults.standard.set(true, forKey: "onboardingCompleted"); onboardingPresented = false }
     var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0-rc.1" }
     var buildNumber: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1" }
-    private func accept(_ update: SceneRunResult) { currentRun = update }
+    private func accept(_ update: SceneRunResult) async {
+        currentRun = update
+        do { try await historyStore.save(update) }
+        catch { presentedError = error.localizedDescription }
+    }
 }

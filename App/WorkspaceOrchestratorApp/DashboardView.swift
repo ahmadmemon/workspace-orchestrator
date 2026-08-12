@@ -47,6 +47,7 @@ private struct CommandCenterDashboard: View {
     private var progress: Double { guard let run, !run.actionRecords.isEmpty else { return 0 }; return Double(run.completedActionCount) / Double(run.actionRecords.count) }
     var body: some View {
         ScrollView { VStack(spacing: 24) {
+            if let interrupted = model.interruptedRun { InterruptedRunBanner(model: model, run: interrupted) }
             HStack(alignment: .center, spacing: 36) {
                 WorkspaceCoreView(status: status, progress: progress)
                 VStack(alignment: .leading, spacing: 12) {
@@ -63,6 +64,28 @@ private struct CommandCenterDashboard: View {
                 VStack(alignment: .leading, spacing: 12) { Text("Recent Runs").font(.title3.bold()); if model.runHistory.isEmpty { Text("Run history is stored locally and redacted.").foregroundStyle(ObsidianTokens.secondaryText) } else { ForEach(model.runHistory.prefix(5)) { run in HStack { Image(systemName: run.status.symbol).foregroundStyle(run.status.color); VStack(alignment: .leading) { Text(run.sceneName); Text(run.status.displayName).font(.caption).foregroundStyle(ObsidianTokens.mutedText) }; Spacer(); Text(run.startedAt?.formatted(date: .omitted, time: .shortened) ?? "") } } } }.obsidianPanel().frame(maxWidth: .infinity)
             }
         }.padding(28) }
+    }
+}
+
+private struct InterruptedRunBanner: View {
+    @ObservedObject var model: AppModel
+    let run: SceneRunResult
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "exclamationmark.arrow.triangle.2.circlepath").font(.title2).foregroundStyle(ObsidianTokens.warning).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Interrupted workspace detected").font(.headline)
+                Text("\(run.sceneName) did not reach a terminal state. Workspace Orchestrator left all resources untouched.").foregroundStyle(ObsidianTokens.secondaryText)
+                Text("Only managed resources recorded as created by this run are eligible for Stop Owned Resources.").font(.caption).foregroundStyle(ObsidianTokens.mutedText)
+            }
+            Spacer()
+            Button("Dismiss") { model.dismissInterruptedRun() }
+            Button("Stop Owned Resources", role: .destructive) { Task { await model.stopInterruptedResources() } }
+                .disabled(!run.resources.contains { $0.kind == "managedProcess" && $0.ownership == .created })
+            Button("Retry Scene") { model.retryInterruptedRun() }.buttonStyle(.borderedProminent)
+        }
+        .obsidianPanel()
+        .accessibilityIdentifier("interruptedRunBanner")
     }
 }
 

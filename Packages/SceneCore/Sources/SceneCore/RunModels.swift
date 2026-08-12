@@ -76,4 +76,19 @@ public struct SceneRunResult: Codable, Equatable, Identifiable, Sendable {
     public var warningCount: Int { actionRecords.filter { $0.status == .succeededWithWarning }.count }
     public var failureCount: Int { actionRecords.filter { [.failed, .timedOut].contains($0.status) }.count }
     public init(scene: Scene, id: String = UUID().uuidString, appVersion: String = "unknown") { self.id = id; sceneID = scene.id; sceneName = scene.name; sceneSchemaVersion = scene.schemaVersion; status = .idle; actionRecords = scene.actions.map { .init(id: $0.id, name: $0.displayName) }; resources = []; startedAt = nil; endedAt = nil; failedActionID = nil; errorCategory = nil; errorMessage = nil; self.appVersion = appVersion; interruptionState = nil }
+
+    public func interruptedAfterRelaunch(at date: Date = Date()) -> SceneRunResult {
+        guard status.isActive else { return self }
+        var copy = self
+        copy.status = .interrupted
+        copy.endedAt = date
+        copy.errorMessage = "Workspace Orchestrator exited before this run reached a terminal state. Owned resources were left untouched."
+        copy.interruptionState = "relaunch-detected"
+        for index in copy.actionRecords.indices where !copy.actionRecords[index].status.isTerminal {
+            copy.actionRecords[index].status = .interrupted
+            copy.actionRecords[index].endedAt = date
+            copy.actionRecords[index].errorMessage = "The app relaunched before this action completed."
+        }
+        return copy
+    }
 }
