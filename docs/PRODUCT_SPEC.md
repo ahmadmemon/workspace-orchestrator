@@ -1,60 +1,42 @@
 # Product Specification
 
-## Product problem
+## Product promise
 
-Knowledge workers repeatedly reconstruct a project context across applications, URLs, terminals, services, and windows. The sequence is slow, error-prone, and provides no single answer to “is my workspace ready?” Existing automation often relies on opaque shell scripts or broad permissions.
+Workspace Orchestrator lets a macOS user restore a complex local workspace as one inspected scene and answers, truthfully, whether it became ready. It is designed for developers and other multi-application knowledge workers who need repeatability without replacing transparent configuration with opaque shell scripts.
 
-## Product vision
+## V1 experience
 
-Workspace Orchestrator makes a workspace a reusable, observable scene. Activating one eventually restores the right tools and state, checks readiness, and communicates progress through a polished macOS experience. The foundation is local-first, inspectable, deterministic, and secure by design.
+The menu-bar app opens the Workspace Core dashboard. Users create or import scenes, configure typed actions in the Scene Builder, preview permissions and approvals, activate or deactivate a scene, inspect current progress, and review durable local history. A command palette and optional global shortcut reduce navigation time. Optional clap and voice input remain off until explicitly enabled.
 
-## Target users
+The scene model supports applications, HTTP(S) browser workspaces, files/folders, one-shot processes, managed processes, bounded waits, VS Code-family workspaces, Terminal/iTerm workspaces, Docker Compose projects, macOS Shortcuts, and reviewed window layouts. Dependencies and policies describe intent without exposing arbitrary shell syntax.
 
-- Developers switching among repositories and toolchains
-- Designers, researchers, and operators with repeatable multi-application workspaces
-- Automation-conscious macOS users who want visibility and control
+## Core requirements
 
-## Core user stories
+1. Treat every decoded or imported scene as untrusted and validate before save and every execution.
+2. Migrate V1 scene data to V2 without silently discarding the original bytes.
+3. Execute valid dependency graphs deterministically with bounded concurrency, cancellation, retries, conditions, checks, and visible policy outcomes.
+4. Require exact approval before a process-bearing action whose fingerprint is not trusted.
+5. Keep scene definitions, approvals, live state, and bounded history locally; store secret values in Keychain.
+6. Make capture a reviewed draft. Never save or execute captured content automatically.
+7. Degrade safely when a tool, display, file, health target, or optional permission is unavailable.
+8. Expose real state only: no simulated integrations, fabricated metrics, hidden fallbacks, or silent errors.
 
-- As a user, I can define an ordered scene without writing a shell command.
-- As a user, I can inspect and validate every action before saving or running.
-- As a user, I can start or cancel a scene from the menu bar.
-- As a user, I can see the current action, timing, output, and exact failure.
-- As a user, I can keep scenes locally without creating an account.
+## Experience requirements
 
-## Milestone 1 scope
+- Native keyboard, menu, window, focus, VoiceOver, contrast, Reduce Motion, and Reduce Transparency behavior
+- Distinguishable idle, preparing, running, waiting, checking, retrying, ready, degraded, failed, cancelled, stopping, and interrupted states using text and symbols as well as color
+- Errors explain what failed, why, impact, next action, and whether resources remain running
+- Destructive actions require confirmation; imported and process actions receive elevated review
+- Menubar controls remain compact while the dashboard provides full inspection
 
-The native menu-bar app provides scene CRUD, explicit demo installation, local JSON persistence, sequential execution, cancellation, and status reporting for exactly three actions: open application, open HTTP(S) URL, and run a structured process.
+## Privacy and permissions
+
+Local operation requires no account. There is no analytics SDK or hosted backend. Accessibility is requested only for reviewed window features. Microphone and Speech are requested only when the corresponding local activation mode is enabled. Notifications and launch at login are optional. Camera, Full Disk Access, administrator access, input monitoring, and screen recording are not V1 requirements.
+
+## Release acceptance
+
+The release candidate must pass package builds/tests, unsigned Debug and Release Xcode builds, universal archive packaging, security-pattern checks, schema migration/recovery tests, and documentation checks. Developer ID signing/notarization and human visual, VoiceOver, permission, real-integration, and audio testing are explicit external gates before stable V1.
 
 ## Non-goals
 
-No parallelism, dependency graph, retries, checks, workspace capture/restoration, Docker or tool-specific integration, window manipulation, accessibility automation, AppleScript, browser automation, activation gestures, voice, AI, cloud, accounts, payment, telemetry, updating, signing, or distribution workflow is included.
-
-## Functional requirements
-
-1. Decode only schema version 1 and the closed set of three action types.
-2. Validate IDs, names, bundle identifiers, URLs, executable paths, working directories, and timeouts.
-3. Persist CRUD operations atomically in Application Support without destroying corrupt data.
-4. Execute in order, stop after failure, capture process results, and support cancellation.
-5. Display saved scenes and detailed live/latest execution state.
-6. Never install or execute the demo without direct user choice.
-
-## Reliability requirements
-
-Errors must be explicit and actionable. A failed action leaves later actions pending. Cancellation produces cancelled state. Persistence supports a missing directory and empty collection. Core behavior has deterministic automated tests, and every accepted change must preserve a passing native build.
-
-## Security requirements
-
-Treat scenes as untrusted; reject unknown schema/action types; never elevate privileges or run shell strings; limit URLs to HTTP(S); inject all side effects; request no broad permissions; commit no secrets; and add no telemetry or cloud dependency without approval.
-
-## Privacy requirements
-
-Scenes remain on the Mac. No analytics, accounts, or network backend exists. Process output is potentially sensitive and must not be transmitted. UI and documentation warn users before sharing logs.
-
-## Accessibility considerations
-
-Use native SwiftUI controls, semantic labels, keyboard-reachable actions, clear text status in addition to color, and understandable errors. Future manual testing should include VoiceOver, reduced motion, increased contrast, Dynamic Type behavior where applicable, and keyboard-only scene editing.
-
-## Long-term direction
-
-After manual acceptance of the foundation, improve orchestration reliability, then restore full workspaces, add explicit activation experiences, complete signing/release quality, and only later explore an optional encrypted team layer. Each stage must retain local control and observable execution.
+V1 excludes AI-generated scenes, cloud synchronization, accounts, team collaboration, remote execution, payments, analytics, browser scripting, arbitrary plug-ins, automatic updates, AppleScript automation, and silent privilege acquisition. These cannot be inferred from the V1 architecture or enabled without a separately reviewed milestone.

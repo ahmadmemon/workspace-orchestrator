@@ -1,96 +1,72 @@
 # Workspace Orchestrator
 
-A local-first native macOS application that runs reusable workspace scenes as explicit, observable sequences of safe structured actions.
+Workspace Orchestrator is a local-first native macOS application that restores saved workspaces as explicit, observable scenes. The V1 release candidate combines structured orchestration, developer-tool integrations, reviewed window capture, and opt-in local activation without accounts, telemetry, or cloud execution.
 
-> Project status: Milestone 1 — Foundation + First Working Scene is locally complete and awaiting manual UI inspection. The name and bundle identifier are provisional.
+> Status: `1.0.0-rc.1` is under automated verification. Developer ID signing, notarization, and human visual/permission testing remain external release gates.
 
-## Vision
+## V1 capabilities
 
-Workspace Orchestrator aims to make returning to a complex project feel like opening one document: activate a scene and have the workspace restored, checked, and clearly reported. The first milestone deliberately establishes the reliable local foundation before adding restoration or ambient activation features.
+- Native SwiftUI menu-bar app and Obsidian Command Center dashboard for macOS 14+
+- Scene schema V2 with V1 migration, validation, import/export review, and local atomic persistence
+- Deterministic dependency graph, bounded parallelism, conditions, retries, health checks, failure policies, cancellation, deactivation, and durable run history
+- Eleven typed actions: applications, URLs, files/folders, one-shot and managed processes, waits, VS Code-family workspaces, terminal workspaces, Docker Compose, macOS Shortcuts, and window layouts
+- Explicit process approval bound to executable, arguments, working directory, and environment references
+- Optional global shortcut, local double-clap, on-device voice commands, spoken status, notifications, and launch-at-login services
+- Accessibility-gated reviewed window capture and restoration
+- No shell command strings, privilege escalation, accounts, analytics, cloud dependency, or embedded secrets
 
-## Current capabilities
-
-- Native SwiftUI menu-bar application and dashboard for macOS 14+
-- Create, edit, reorder, validate, save, run, and delete scenes
-- Exactly three action types: open an application by bundle identifier, open an HTTP(S) URL, and run an executable with a structured argument array
-- Sequential execution with stop-on-failure and cancellation
-- Per-action and overall status, timing, errors, stdout, and stderr
-- Atomic local JSON persistence in `~/Library/Application Support/WorkspaceOrchestrator/scenes.json`
-- Explicit **Install Demo Scene** option; it is neither installed nor run automatically
-
-Milestone 1 does **not** support window restoration, Docker, VS Code or terminal integration, health checks, parallel actions, dependencies, retries, browser automation, AppleScript, accessibility control, microphones, clap or voice activation, AI, accounts, cloud sync, telemetry, updates, signing, notarization, or App Store distribution.
+See the [V1 scope](docs/V1_SCOPE.md), [quick start](docs/QUICK_START.md), and [user guide](docs/USER_GUIDE.md).
 
 ## Architecture
 
-- `SceneCore` is pure Swift domain logic: Codable scene/action schemas, validation, run models, and JSON persistence.
-- `MacAutomation` owns side effects behind `ApplicationOpening`, `URLOpening`, and `ProcessRunning` protocols, plus sequential scene execution.
-- `WorkspaceOrchestratorApp` is the SwiftUI presentation and application-state layer. It injects real native adapters and does not contain orchestration logic.
-
-See [Architecture](docs/ARCHITECTURE.md) and [Security model](docs/SECURITY_MODEL.md).
-
-## Repository structure
+The Swift packages enforce one-way dependencies:
 
 ```text
-App/WorkspaceOrchestratorApp/     SwiftUI app, menu bar, dashboard, editor
-Packages/SceneCore/               Domain, validation, run models, persistence
-Packages/MacAutomation/           Native adapters and SceneExecutor
-Tests/                            XCTest suites using mocks where side effects exist
-Examples/                         Inspectable scene examples
-docs/decisions/                   Architecture decision records
-.github/                          CI and contribution templates
-WorkspaceOrchestrator.xcodeproj/  Native macOS application target
+WorkspaceOrchestratorApp
+  ├── ActivationKit ───────────────> SceneCore
+  ├── WorkspaceIntegrations ───────> MacAutomation ──> OrchestrationEngine ──> SceneCore
+  └───────────────────────────────────────────────────────────────────────> SceneCore
 ```
+
+`SceneCore` owns portable schemas, validation, persistence, history, and security models. `OrchestrationEngine` owns deterministic scheduling. `MacAutomation` owns macOS side effects behind protocols. `WorkspaceIntegrations` builds typed integration requests. `ActivationKit` owns opt-in local activation. SwiftUI views coordinate these modules but never execute processes directly.
+
+Read [Architecture](docs/ARCHITECTURE.md), [Security model](docs/SECURITY_MODEL.md), and [Threat model](docs/THREAT_MODEL.md).
 
 ## Requirements
 
 - macOS 14 or newer
-- Xcode 15.4 or newer
-- Swift 5.10-compatible toolchain
-- No third-party dependencies
+- Xcode 15.4 or newer with a Swift 5.10-compatible toolchain
+- No third-party runtime dependencies
 
-## Development setup
+## Build and test
 
 ```bash
-git clone <repository-url>
-cd workspace-orchestrator
 swift build --target SceneCore
+swift build
 swift test
 xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData CODE_SIGNING_ALLOWED=NO build
 ```
 
-The exact commands successfully observed for Milestone 1 were:
+Release verification and packaging:
 
 ```bash
-swift build --target SceneCore
-swift test
-xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData CODE_SIGNING_ALLOWED=NO build
+scripts/security-audit.sh
+scripts/verify-version.sh
+scripts/build-release.sh
 ```
 
-## Launching locally
+The release script refuses to overwrite an existing output directory, tests first, archives a universal `arm64`/`x86_64` app, and emits a ZIP, checksum, dependency inventory, source revision, and toolchain record. Signing and notarization run only when the documented credentials are configured.
 
-Open `WorkspaceOrchestrator.xcodeproj`, select the `WorkspaceOrchestratorApp` scheme and **My Mac**, then choose **Run**. For a command-line build, the unsigned debug bundle is under `.build/XcodeDerivedData/Build/Products/Debug/Workspace Orchestrator.app`.
+## Local development
 
-The application is a menu-bar agent, so look for its grid icon in the menu bar rather than the Dock. Choose **Open Dashboard** to manage scenes.
+Open `WorkspaceOrchestrator.xcodeproj`, select `WorkspaceOrchestratorApp` and **My Mac**, then Run. The application appears in the menu bar; choose **Open Dashboard**. Install the demo scene explicitly, review it, approve any process action when prompted, and activate only when ready.
 
-## Demo Scene
+Scene and run data live under `~/Library/Application Support/WorkspaceOrchestrator`. Secrets belong in Keychain and scenes contain references only. Imported scenes always enter an untrusted review flow and never run automatically.
 
-1. Open the dashboard from the menu-bar item.
-2. Click **Install Demo Scene**. Installation is explicit and does not run anything.
-3. Inspect or edit the three actions.
-4. Click **Run** only when ready. The demo opens TextEdit, opens `https://example.com`, then runs `/usr/bin/printf` with a harmless message.
+## Safety
 
-## Process-action security
+Process actions execute local programs as the current user. Workspace Orchestrator accepts only an executable plus a structured argument array; it rejects shell wrappers, `sudo`, control characters, unsupported URLs, invalid dependency graphs, and unsafe imported execution until reviewed. See [Permissions](docs/PERMISSIONS.md), [Privacy](docs/PRIVACY.md), and [Import/export](docs/IMPORT_EXPORT.md).
 
-Process actions can run local executables with the permissions of the current user. Review every executable path, argument, and working directory before running an imported scene. The schema intentionally forbids arbitrary shell command strings and the implementation never invokes `/bin/sh -c`, `/bin/bash -c`, `/bin/zsh -c`, or equivalent wrappers.
+## Contributing and support
 
-## Screenshot
-
-> Screenshot placeholder — no screenshot is claimed for Milestone 1. Add a verified dashboard image after manual UI inspection.
-
-## Roadmap
-
-Milestone 2 focuses on reliable orchestration; Milestone 3 on workspace restoration; Milestone 4 on activation; Milestone 5 on open-source release quality; and Milestone 6 explores an optional team layer. See the [full roadmap](docs/ROADMAP.md). Future milestones are not implemented.
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes and report vulnerabilities according to [SECURITY.md](SECURITY.md).
-
-Licensed under the [Apache License 2.0](LICENSE). Copyright 2026 Ahmad Memon.
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), the [roadmap](docs/ROADMAP.md), and [troubleshooting](docs/TROUBLESHOOTING.md). Licensed under [Apache-2.0](LICENSE). Copyright 2026 Ahmad Memon.
