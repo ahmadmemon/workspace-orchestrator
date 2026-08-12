@@ -9,11 +9,13 @@ public protocol SceneStoring: Sendable {
 public enum SceneStoreError: LocalizedError, Equatable {
     case corruptData(String)
     case fileSystem(String)
+    case migration(String)
 
     public var errorDescription: String? {
         switch self {
         case .corruptData(let message): "Stored scene data is invalid: \(message)"
         case .fileSystem(let message): "Scene storage failed: \(message)"
+        case .migration(let message): "Scene migration failed without changing the original data: \(message)"
         }
     }
 }
@@ -46,13 +48,19 @@ public actor JSONSceneStore: SceneStoring {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
         do {
             let data = try Data(contentsOf: fileURL)
+            let requiresMigration = try containsLegacyScene(in: data)
             let scenes = try decoder.decode([Scene].self, from: data)
             for scene in scenes { try SceneValidator.validate(scene) }
+            if requiresMigration {
+                try migrate(originalData: data, migratedScenes: scenes)
+            }
             return scenes.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         } catch let error as SceneValidationError {
             throw SceneStoreError.corruptData(error.localizedDescription)
         } catch let error as DecodingError {
             throw SceneStoreError.corruptData(String(describing: error))
+        } catch let error as SceneStoreError {
+            throw error
         } catch {
             throw SceneStoreError.fileSystem(error.localizedDescription)
         }
@@ -82,6 +90,28 @@ public actor JSONSceneStore: SceneStoring {
             try data.write(to: directoryURL.appendingPathComponent("scenes.json"), options: .atomic)
         } catch {
             throw SceneStoreError.fileSystem(error.localizedDescription)
+        }
+    }
+
+    private func containsLegacyScene(in data: Data) throws -> Bool {
+        do {
+            guard let array = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { throw SceneStoreError.corruptData("The root value must be a scene array.") }
+            return array.contains { ($0["schemaVersion"] as? Int ?? 1) < Scene.currentSchemaVersion }
+        } catch let error as SceneStoreError { throw error }
+        catch { throw SceneStoreError.corruptData(error.localizedDescription) }
+    }
+
+    private func migrate(originalData: Data, migratedScenes: [Scene]) throws {
+        do {
+            let backupDirectory = directoryURL.appendingPathComponent("migration-backups", isDirectory: true)
+            try FileManager.default.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
+            let formatter = ISO8601DateFormatter()
+            let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            let backupURL = backupDirectory.appendingPathComponent("scenes-v1-\(stamp).json")
+            try originalData.write(to: backupURL, options: .withoutOverwriting)
+            try write(migratedScenes)
+        } catch {
+            throw SceneStoreError.migration(error.localizedDescription)
         }
     }
 }

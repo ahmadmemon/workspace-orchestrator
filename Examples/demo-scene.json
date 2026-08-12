@@ -1,13 +1,19 @@
 {
   "actions" : [
-    { "bundleIdentifier" : "com.apple.TextEdit", "id" : "demo-open-textedit", "type" : "openApplication" },
-    { "id" : "demo-open-url", "type" : "openURL", "url" : "https:\/\/example.com" },
-    { "arguments" : ["Workspace Orchestrator demo completed.\n"], "executable" : "\/usr\/bin\/printf", "id" : "demo-run-printf", "timeoutSeconds" : 10, "type" : "runProcess" }
+    { "bundleIdentifier" : "com.apple.TextEdit", "configuration" : { "dependencies" : [], "enabled" : true, "failurePolicy" : "stopScene", "healthChecks" : [], "idempotencyPolicy" : "reuseExisting", "conditions" : [], "outputRetention" : "summary", "retryPolicy" : { "initialDelaySeconds" : 1, "jitterFraction" : 0, "maximumAttempts" : 1, "maximumDelaySeconds" : 30, "maximumTotalDurationSeconds" : 120, "retryableCategories" : ["healthCheck", "missingIntegration", "network", "processExit", "processLaunch", "timeout"], "strategy" : "none" } }, "id" : "demo-open-textedit", "type" : "openApplication" },
+    { "configuration" : { "dependencies" : ["demo-open-textedit"], "enabled" : true, "failurePolicy" : "stopScene", "healthChecks" : [], "idempotencyPolicy" : "oncePerRun", "conditions" : [], "outputRetention" : "summary", "retryPolicy" : { "initialDelaySeconds" : 1, "jitterFraction" : 0, "maximumAttempts" : 1, "maximumDelaySeconds" : 30, "maximumTotalDurationSeconds" : 120, "retryableCategories" : ["healthCheck", "missingIntegration", "network", "processExit", "processLaunch", "timeout"], "strategy" : "none" } }, "id" : "demo-open-url", "type" : "openURL", "url" : "https:\/\/example.com" },
+    { "arguments" : ["Workspace Orchestrator demo completed.\n"], "configuration" : { "dependencies" : ["demo-open-url"], "enabled" : true, "failurePolicy" : "stopScene", "healthChecks" : [], "idempotencyPolicy" : "alwaysRun", "conditions" : [], "outputRetention" : "summary", "retryPolicy" : { "initialDelaySeconds" : 1, "jitterFraction" : 0, "maximumAttempts" : 1, "maximumDelaySeconds" : 30, "maximumTotalDurationSeconds" : 120, "retryableCategories" : ["healthCheck", "missingIntegration", "network", "processExit", "processLaunch", "timeout"], "strategy" : "none" } }, "executable" : "\/usr\/bin\/printf", "expectedExitCodes" : [0], "id" : "demo-run-printf", "timeoutSeconds" : 10, "type" : "runProcess" }
   ],
   "createdAt" : "2026-08-09T00:00:00Z",
   "description" : "Inspectable example matching the explicitly installed in-app demo.",
+  "deactivationActions" : [],
+  "defaultFailurePolicy" : "stopScene",
+  "favorite" : false,
   "id" : "workspace-orchestrator-demo-example",
   "name" : "Workspace Orchestrator Demo",
-  "schemaVersion" : 1,
+  "maximumConcurrency" : 1,
+  "schemaVersion" : 2,
+  "tags" : ["demo"],
+  "trustState" : "local",
   "updatedAt" : "2026-08-09T00:00:00Z"
 }
