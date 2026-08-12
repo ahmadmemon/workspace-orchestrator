@@ -11,21 +11,165 @@ public struct ProcessApproval: Codable, Equatable, Identifiable, Sendable {
     public init(fingerprint: String, actionID: String, approvedAt: Date = Date()) { self.fingerprint = fingerprint; self.actionID = actionID; self.approvedAt = approvedAt }
 }
 
+public enum ProcessApprovalScope: String, Codable, Sendable {
+    case once
+    case exactAction
+}
+
+public struct ProcessApprovalDetails: Equatable, Sendable {
+    public let actionID: String
+    public let kind: String
+    public let executable: String
+    public let arguments: [String]
+    public let workingDirectory: String?
+    public let environmentNames: [String]
+    public let timeout: Double?
+    public let retryPolicy: RetryPolicy
+    public let managed: Bool
+    public let stopBehavior: String?
+}
+
+public protocol ProcessApprovalAuthorizing: Sendable {
+    func isApproved(_ action: SceneAction) async throws -> Bool
+    func approve(_ action: SceneAction, scope: ProcessApprovalScope) async throws
+    func consumeApproval(for action: SceneAction) async throws -> Bool
+    func revoke(actionID: String) async throws
+}
+
+public struct RejectingProcessApprovalAuthorizer: ProcessApprovalAuthorizing {
+    public init() {}
+    public func isApproved(_ action: SceneAction) async throws -> Bool { !action.requiresProcessApproval }
+    public func approve(_ action: SceneAction, scope: ProcessApprovalScope) async throws {}
+    public func consumeApproval(for action: SceneAction) async throws -> Bool { !action.requiresProcessApproval }
+    public func revoke(actionID: String) async throws {}
+}
+
+public actor JSONProcessApprovalStore: ProcessApprovalAuthorizing {
+    public let fileURL: URL
+    private var onceFingerprints = Set<String>()
+    private var loadedApprovals: [ProcessApproval]?
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    public init(fileURL: URL) {
+        self.fileURL = fileURL
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        decoder.dateDecodingStrategy = .iso8601
+    }
+
+    public static func applicationSupportStore() throws -> JSONProcessApprovalStore {
+        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw ApprovalStoreError.fileSystem("Application Support is unavailable.")
+        }
+        return .init(fileURL: base.appendingPathComponent("WorkspaceOrchestrator/process-approvals.json"))
+    }
+
+    public func isApproved(_ action: SceneAction) async throws -> Bool {
+        guard action.requiresProcessApproval else { return true }
+        let fingerprint = try ApprovalFingerprint.make(for: action)
+        if onceFingerprints.contains(fingerprint) { return true }
+        return try load().contains { $0.actionID == action.id && $0.fingerprint == fingerprint }
+    }
+
+    public func approve(_ action: SceneAction, scope: ProcessApprovalScope) async throws {
+        guard action.requiresProcessApproval else { return }
+        let fingerprint = try ApprovalFingerprint.make(for: action)
+        switch scope {
+        case .once:
+            onceFingerprints.insert(fingerprint)
+        case .exactAction:
+            var approvals = try load().filter { $0.actionID != action.id }
+            approvals.append(.init(fingerprint: fingerprint, actionID: action.id))
+            try write(approvals)
+        }
+    }
+
+    public func consumeApproval(for action: SceneAction) async throws -> Bool {
+        guard action.requiresProcessApproval else { return true }
+        let fingerprint = try ApprovalFingerprint.make(for: action)
+        if onceFingerprints.remove(fingerprint) != nil { return true }
+        return try load().contains { $0.actionID == action.id && $0.fingerprint == fingerprint }
+    }
+
+    public func revoke(actionID: String) async throws {
+        try write(try load().filter { $0.actionID != actionID })
+    }
+
+    private func load() throws -> [ProcessApproval] {
+        if let loadedApprovals { return loadedApprovals }
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { loadedApprovals = []; return [] }
+        do {
+            let values = try decoder.decode([ProcessApproval].self, from: Data(contentsOf: fileURL))
+            loadedApprovals = values
+            return values
+        } catch {
+            throw ApprovalStoreError.corrupt(error.localizedDescription)
+        }
+    }
+
+    private func write(_ approvals: [ProcessApproval]) throws {
+        do {
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try encoder.encode(approvals).write(to: fileURL, options: .atomic)
+            loadedApprovals = approvals
+        } catch let error as ApprovalStoreError {
+            throw error
+        } catch {
+            throw ApprovalStoreError.fileSystem(error.localizedDescription)
+        }
+    }
+}
+
+public enum ApprovalStoreError: LocalizedError {
+    case corrupt(String)
+    case fileSystem(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .corrupt(let message): "Stored process approvals are corrupt and were not used: \(message)"
+        case .fileSystem(let message): "Process approval storage failed: \(message)"
+        }
+    }
+}
+
+public extension SceneAction {
+    var requiresProcessApproval: Bool {
+        switch self {
+        case .runProcess, .managedProcess, .editorWorkspace, .terminalWorkspace, .dockerCompose, .shortcut: true
+        default: false
+        }
+    }
+
+    var processApprovalDetails: ProcessApprovalDetails? {
+        let retry = configuration.retryPolicy
+        switch self {
+        case .runProcess(let value):
+            return .init(actionID: id, kind: "One-shot process", executable: value.executable, arguments: value.arguments, workingDirectory: value.workingDirectory, environmentNames: value.environment.keys.sorted(), timeout: value.timeoutSeconds ?? configuration.timeoutSeconds, retryPolicy: retry, managed: false, stopBehavior: nil)
+        case .managedProcess(let value):
+            return .init(actionID: id, kind: "Managed process", executable: value.executable, arguments: value.arguments, workingDirectory: value.workingDirectory, environmentNames: value.environment.keys.sorted(), timeout: configuration.timeoutSeconds, retryPolicy: retry, managed: true, stopBehavior: "Graceful stop after \(value.gracefulStopSeconds) seconds")
+        case .editorWorkspace(let value):
+            var arguments = [value.editor.rawValue, value.projectPath, value.profile ?? "", String(value.newWindow)]
+            arguments += value.files.map { "\($0.file):\($0.line.map(String.init) ?? ""):\($0.column.map(String.init) ?? "")" }
+            return .init(actionID: id, kind: "Editor workspace", executable: "/usr/bin/open", arguments: arguments, workingDirectory: nil, environmentNames: [], timeout: configuration.timeoutSeconds, retryPolicy: retry, managed: false, stopBehavior: nil)
+        case .terminalWorkspace(let value):
+            return .init(actionID: id, kind: "Terminal workspace", executable: value.tmuxSessionName == nil ? "/usr/bin/open" : "detected tmux executable", arguments: [value.terminal.rawValue, value.workingDirectory, value.tmuxSessionName ?? ""], workingDirectory: value.workingDirectory, environmentNames: [], timeout: configuration.timeoutSeconds, retryPolicy: retry, managed: value.tmuxSessionName != nil, stopBehavior: value.stopTmuxOnDeactivate ? "Stop owned tmux session on deactivation" : "Leave tmux session running")
+        case .dockerCompose(let value):
+            return .init(actionID: id, kind: "Docker Compose", executable: "detected Docker CLI", arguments: [value.projectDirectory, value.composeFile ?? "", value.services.joined(separator: ","), value.profiles.joined(separator: ","), String(value.build), value.pullPolicy.rawValue, value.stopPolicy.rawValue, String(value.removeVolumes)], workingDirectory: value.projectDirectory, environmentNames: [], timeout: configuration.timeoutSeconds, retryPolicy: retry, managed: true, stopBehavior: "\(value.stopPolicy.rawValue), remove volumes: \(value.removeVolumes)")
+        case .shortcut(let value):
+            return .init(actionID: id, kind: "macOS Shortcut", executable: "/usr/bin/shortcuts", arguments: ["run", value.name, value.inputFile ?? ""], workingDirectory: nil, environmentNames: [], timeout: configuration.timeoutSeconds, retryPolicy: retry, managed: false, stopBehavior: nil)
+        default:
+            return nil
+        }
+    }
+}
+
 public enum ApprovalFingerprint {
     public static func make(for action: SceneAction) throws -> String {
-        let safe: ApprovalInput
-        switch action {
-        case .runProcess(let value):
-            safe = .init(kind: "process", executable: value.executable, arguments: value.arguments, workingDirectory: value.workingDirectory, environmentNames: value.environment.keys.sorted(), timeout: value.timeoutSeconds ?? value.configuration.timeoutSeconds, retry: value.configuration.retryPolicy, managed: false, stopBehavior: nil)
-        case .managedProcess(let value):
-            safe = .init(kind: "managedProcess", executable: value.executable, arguments: value.arguments, workingDirectory: value.workingDirectory, environmentNames: value.environment.keys.sorted(), timeout: value.configuration.timeoutSeconds, retry: value.configuration.retryPolicy, managed: true, stopBehavior: String(value.gracefulStopSeconds))
-        case .dockerCompose(let value):
-            safe = .init(kind: "dockerCompose", executable: "/usr/local/bin/docker", arguments: [value.projectDirectory, value.composeFile ?? "", value.services.joined(separator: ","), value.profiles.joined(separator: ","), String(value.build), value.pullPolicy.rawValue], workingDirectory: value.projectDirectory, environmentNames: [], timeout: value.configuration.timeoutSeconds, retry: value.configuration.retryPolicy, managed: true, stopBehavior: "\(value.stopPolicy.rawValue):removeVolumes=\(value.removeVolumes)")
-        case .shortcut(let value):
-            safe = .init(kind: "shortcut", executable: "/usr/bin/shortcuts", arguments: [value.name, value.inputFile ?? ""], workingDirectory: nil, environmentNames: [], timeout: value.configuration.timeoutSeconds, retry: value.configuration.retryPolicy, managed: false, stopBehavior: nil)
-        default:
+        guard let details = action.processApprovalDetails else {
             throw FingerprintError.notExecutable
         }
+        let safe = ApprovalInput(kind: details.kind, executable: details.executable, arguments: details.arguments, workingDirectory: details.workingDirectory, environmentNames: details.environmentNames, timeout: details.timeout, retry: details.retryPolicy, managed: details.managed, stopBehavior: details.stopBehavior)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return SHA256.hexDigest(try encoder.encode(safe))
     }

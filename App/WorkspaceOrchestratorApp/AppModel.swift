@@ -12,6 +12,13 @@ enum AppSection: String, CaseIterable, Identifiable {
     var symbol: String { switch self { case .dashboard: "square.grid.2x2"; case .scenes: "rectangle.stack"; case .currentRun: "waveform.path.ecg"; case .history: "clock.arrow.circlepath"; case .capture: "viewfinder"; case .integrations: "puzzlepiece.extension"; case .permissions: "lock.shield"; case .diagnostics: "stethoscope" } }
 }
 
+struct ProcessApprovalRequest: Identifiable {
+    let id = UUID()
+    let scene: SceneCore.Scene
+    let actions: [SceneAction]
+    let requiresImportTrustReview: Bool
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var scenes: [Scene] = []
@@ -26,12 +33,14 @@ final class AppModel: ObservableObject {
     @Published var commandPalettePresented = false
     @Published var overlayPresented = false
     @Published var onboardingPresented = !UserDefaults.standard.bool(forKey: "onboardingCompleted")
+    @Published var processApprovalRequest: ProcessApprovalRequest?
 
     let accessibilityPermission: any AccessibilityPermissionManaging
     let hotKeyController = GlobalHotKeyController()
     private let store: any SceneStoring; private let historyStore: any RunHistoryStoring; private let executor: SceneExecutor
     private let managedProcesses: any ManagedProcessControlling; private let windowController: any WindowLayoutControlling; private let integrationDiscovery: any IntegrationDiscovering
     private let runningApplicationDiscovery: any RunningApplicationDiscovering
+    private let approvalStore: any ProcessApprovalAuthorizing
     private var runTask: Task<Void, Never>?
 
     var isRunning: Bool { currentRun?.status.isActive == true }
@@ -47,8 +56,12 @@ final class AppModel: ObservableObject {
         let windows = AXWindowLayoutController(permission: permission); windowController = windows
         integrationDiscovery = NativeIntegrationDiscovery()
         runningApplicationDiscovery = NSWorkspaceRunningApplicationDiscovery()
+        let approvals: JSONProcessApprovalStore
+        do { approvals = try JSONProcessApprovalStore.applicationSupportStore() }
+        catch { approvals = JSONProcessApprovalStore(fileURL: fallback.appendingPathComponent("process-approvals.json")); presentedError = error.localizedDescription }
+        approvalStore = approvals
         let runner = FoundationProcessRunner()
-        self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: SystemKeychainStore(), windowController: windows, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner))
+        self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: SystemKeychainStore(), windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner))
         Task { await refresh() }
     }
 
@@ -60,6 +73,39 @@ final class AppModel: ObservableObject {
     func delete(_ scene: Scene) async { do { try await store.deleteScene(id: scene.id); await loadScenes() } catch { presentedError = error.localizedDescription } }
     func installDemoScene() async { guard !scenes.contains(where: { $0.name == "Workspace Orchestrator Demo" }) else { presentedError = "The demo scene is already installed."; return }; _ = await save(.demo()) }
     func run(_ scene: Scene) {
+        guard !isRunning, processApprovalRequest == nil else { return }
+        Task { await prepareToRun(scene) }
+    }
+    func approvePendingRun(scope: ProcessApprovalScope, trustImportedScene: Bool) async {
+        guard let request = processApprovalRequest else { return }
+        do {
+            for action in request.actions { try await approvalStore.approve(action, scope: scope) }
+            var scene = request.scene
+            if trustImportedScene {
+                scene.trustState = .local
+                scene.updatedAt = Date()
+                try await store.save(scene)
+                await loadScenes()
+            }
+            processApprovalRequest = nil
+            startRun(scene)
+        } catch { presentedError = error.localizedDescription }
+    }
+    func cancelPendingRun() { processApprovalRequest = nil }
+    private func prepareToRun(_ scene: Scene) async {
+        do {
+            var unapproved: [SceneAction] = []
+            for action in scene.actions where action.requiresProcessApproval {
+                if !(try await approvalStore.isApproved(action)) { unapproved.append(action) }
+            }
+            if scene.trustState == .importedUntrusted || !unapproved.isEmpty {
+                processApprovalRequest = .init(scene: scene, actions: unapproved, requiresImportTrustReview: scene.trustState == .importedUntrusted)
+                return
+            }
+            startRun(scene)
+        } catch { presentedError = error.localizedDescription }
+    }
+    private func startRun(_ scene: Scene) {
         guard !isRunning else { return }; selectedSection = .currentRun; overlayPresented = true
         runTask = Task { [executor] in
             let final = await executor.execute(scene: scene) { [weak self] update in await self?.accept(update) }

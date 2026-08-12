@@ -5,8 +5,8 @@ import SceneCore
 public struct SceneExecutor: Sendable {
     public typealias UpdateHandler = @Sendable (SceneRunResult) async -> Void
     private let engine: OrchestrationEngine
-    public init(applicationOpener: any ApplicationOpening, urlOpener: any URLOpening, processRunner: any ProcessRunning, fileOpener: (any FileOpening)? = nil, managedProcesses: (any ManagedProcessControlling)? = nil, keychain: (any KeychainStoring)? = nil, windowController: (any WindowLayoutControlling)? = nil, additionalActionExecutor: (any ActionExecuting)? = nil) {
-        let executor = NativeActionExecutor(applicationOpener: applicationOpener, urlOpener: urlOpener, processRunner: processRunner, fileOpener: fileOpener, managedProcesses: managedProcesses, keychain: keychain, windowController: windowController, additionalActionExecutor: additionalActionExecutor)
+    public init(applicationOpener: any ApplicationOpening, urlOpener: any URLOpening, processRunner: any ProcessRunning, fileOpener: (any FileOpening)? = nil, managedProcesses: (any ManagedProcessControlling)? = nil, keychain: (any KeychainStoring)? = nil, windowController: (any WindowLayoutControlling)? = nil, approvalAuthorizer: any ProcessApprovalAuthorizing = RejectingProcessApprovalAuthorizer(), additionalActionExecutor: (any ActionExecuting)? = nil) {
+        let executor = NativeActionExecutor(applicationOpener: applicationOpener, urlOpener: urlOpener, processRunner: processRunner, fileOpener: fileOpener, managedProcesses: managedProcesses, keychain: keychain, windowController: windowController, approvalAuthorizer: approvalAuthorizer, additionalActionExecutor: additionalActionExecutor)
         engine = OrchestrationEngine(actionExecutor: executor, healthChecker: NativeHealthChecker(managedProcesses: managedProcesses))
     }
     public func execute(scene: Scene, onUpdate: UpdateHandler? = nil) async -> SceneRunResult { await engine.execute(scene: scene, onUpdate: onUpdate) }
@@ -14,8 +14,11 @@ public struct SceneExecutor: Sendable {
 }
 
 private struct NativeActionExecutor: ActionExecuting {
-    let applicationOpener: any ApplicationOpening; let urlOpener: any URLOpening; let processRunner: any ProcessRunning; let fileOpener: (any FileOpening)?; let managedProcesses: (any ManagedProcessControlling)?; let keychain: (any KeychainStoring)?; let windowController: (any WindowLayoutControlling)?; let additionalActionExecutor: (any ActionExecuting)?
+    let applicationOpener: any ApplicationOpening; let urlOpener: any URLOpening; let processRunner: any ProcessRunning; let fileOpener: (any FileOpening)?; let managedProcesses: (any ManagedProcessControlling)?; let keychain: (any KeychainStoring)?; let windowController: (any WindowLayoutControlling)?; let approvalAuthorizer: any ProcessApprovalAuthorizing; let additionalActionExecutor: (any ActionExecuting)?
     func execute(_ action: SceneAction) async throws -> ActionExecutionOutcome {
+        if action.requiresProcessApproval, !(try await approvalAuthorizer.consumeApproval(for: action)) {
+            throw OrchestrationFailure(category: .securityApproval, message: "This exact executable action has not been approved. Review its executable, arguments, environment names, timeout, retries, and stop behavior before running it.")
+        }
         switch action {
         case .openApplication(let value): try await applicationOpener.openApplication(bundleIdentifier: value.bundleIdentifier); return .init(resources: [.init(actionID: value.id, kind: "application", identifier: value.bundleIdentifier, ownership: .unknown)])
         case .openURL(let value):

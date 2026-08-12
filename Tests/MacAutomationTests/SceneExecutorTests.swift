@@ -9,7 +9,7 @@ final class SceneExecutorTests: XCTestCase {
         let app = MockApplicationOpener(events: events)
         let url = MockURLOpener(events: events)
         let process = MockProcessRunner(events: events)
-        let executor = SceneExecutor(applicationOpener: app, urlOpener: url, processRunner: process)
+        let executor = SceneExecutor(applicationOpener: app, urlOpener: url, processRunner: process, approvalAuthorizer: AllowAllApprovals())
 
         let result = await executor.execute(scene: TestScene.valid)
 
@@ -28,7 +28,8 @@ final class SceneExecutorTests: XCTestCase {
         let executor = SceneExecutor(
             applicationOpener: MockApplicationOpener(events: events, error: TestError.failed),
             urlOpener: MockURLOpener(events: events),
-            processRunner: MockProcessRunner(events: events)
+            processRunner: MockProcessRunner(events: events),
+            approvalAuthorizer: AllowAllApprovals()
         )
 
         let result = await executor.execute(scene: TestScene.valid)
@@ -45,7 +46,8 @@ final class SceneExecutorTests: XCTestCase {
         let executor = SceneExecutor(
             applicationOpener: MockApplicationOpener(events: EventRecorder()),
             urlOpener: MockURLOpener(events: EventRecorder()),
-            processRunner: MockProcessRunner(events: EventRecorder(), exitCode: 7)
+            processRunner: MockProcessRunner(events: EventRecorder(), exitCode: 7),
+            approvalAuthorizer: AllowAllApprovals()
         )
         var scene = TestScene.valid
         scene.actions = [.runProcess(.init(id: "process", executable: "/usr/bin/false"))]
@@ -59,7 +61,8 @@ final class SceneExecutorTests: XCTestCase {
         let executor = SceneExecutor(
             applicationOpener: MockApplicationOpener(events: EventRecorder()),
             urlOpener: MockURLOpener(events: EventRecorder()),
-            processRunner: CancellingProcessRunner()
+            processRunner: CancellingProcessRunner(),
+            approvalAuthorizer: AllowAllApprovals()
         )
         let scene = Scene(
             id: TestScene.valid.id,
@@ -72,6 +75,24 @@ final class SceneExecutorTests: XCTestCase {
         let result = await task.value
         XCTAssertEqual(result.status, .cancelled)
         XCTAssertEqual(result.actionRecords.first?.status, .cancelled)
+    }
+
+    func testUnapprovedProcessIsRejectedBeforeLaunch() async {
+        let events = EventRecorder()
+        let executor = SceneExecutor(
+            applicationOpener: MockApplicationOpener(events: events),
+            urlOpener: MockURLOpener(events: events),
+            processRunner: MockProcessRunner(events: events)
+        )
+        let scene = Scene(name: "Approval", actions: [.runProcess(.init(id: "process", executable: "/usr/bin/printf", arguments: ["safe"]))])
+
+        let result = await executor.execute(scene: scene)
+
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertEqual(result.errorCategory, .securityApproval)
+        XCTAssertTrue(result.errorMessage?.contains("not been approved") == true)
+        let recordedEvents = await events.values
+        XCTAssertTrue(recordedEvents.isEmpty)
     }
 }
 
@@ -119,6 +140,13 @@ private struct CancellingProcessRunner: ProcessRunning {
         do { try await Task.sleep(for: .seconds(5)) } catch { }
         return .init(stdout: "", stderr: "", exitCode: 15, startedAt: Date(), endedAt: Date(), timedOut: false, cancelled: true)
     }
+}
+
+private struct AllowAllApprovals: ProcessApprovalAuthorizing {
+    func isApproved(_ action: SceneAction) async throws -> Bool { true }
+    func approve(_ action: SceneAction, scope: ProcessApprovalScope) async throws {}
+    func consumeApproval(for action: SceneAction) async throws -> Bool { true }
+    func revoke(actionID: String) async throws {}
 }
 
 private enum TestScene {
