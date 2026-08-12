@@ -24,7 +24,12 @@ public struct CapturedWindow: Codable, Equatable, Identifiable, Sendable {
     public var id: String; public var bundleIdentifier: String; public var applicationName: String; public var title: String?; public var placement: WindowPlacement; public var matchingConfidence: Double
     public init(id: String = UUID().uuidString, bundleIdentifier: String, applicationName: String, title: String?, placement: WindowPlacement, matchingConfidence: Double) { self.id = id; self.bundleIdentifier = bundleIdentifier; self.applicationName = applicationName; self.title = title; self.placement = placement; self.matchingConfidence = matchingConfidence }
 }
-public struct WindowRestorationResult: Equatable, Sendable { public var applied: [String]; public var unmatched: [String]; public var warnings: [String] }
+public struct WindowRestorationResult: Equatable, Sendable {
+    public var applied: [String]
+    public var unmatched: [String]
+    public var warnings: [String]
+    public init(applied: [String], unmatched: [String], warnings: [String]) { self.applied = applied; self.unmatched = unmatched; self.warnings = warnings }
+}
 
 public enum WindowLayoutMath {
     public static func normalize(_ frame: CGRect, in display: CGRect) -> NormalizedFrame { .init(x: (frame.minX - display.minX) / display.width, y: (frame.minY - display.minY) / display.height, width: frame.width / display.width, height: frame.height / display.height) }

@@ -60,6 +60,7 @@ final class AppModel: ObservableObject {
     private let approvalStore: any ProcessApprovalAuthorizing
     private let launchAtLoginManager: any LaunchAtLoginManaging
     private let notificationManager: any LocalNotificationManaging
+    private let uiTesting: Bool
     private var runTask: Task<Void, Never>?
     private var clapListener: LocalClapListener?
     private var voiceSessionID: UUID?
@@ -71,31 +72,45 @@ final class AppModel: ObservableObject {
     init(store: (any SceneStoring)? = nil, executor: SceneExecutor? = nil, historyStore: (any RunHistoryStoring)? = nil) {
         let arguments = ProcessInfo.processInfo.arguments
         let uiTesting = arguments.contains("--ui-testing")
+        self.uiTesting = uiTesting
         let fallback = FileManager.default.temporaryDirectory.appendingPathComponent("WorkspaceOrchestrator-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
         if uiTesting { self.store = store ?? JSONSceneStore(directoryURL: fallback); self.historyStore = historyStore ?? JSONRunHistoryStore(directoryURL: fallback.appendingPathComponent("RunHistory")); onboardingPresented = arguments.contains("--reset-onboarding") }
         else {
             do { self.store = try store ?? JSONSceneStore.applicationSupportStore() } catch { self.store = JSONSceneStore(directoryURL: fallback); presentedError = error.localizedDescription }
             do { self.historyStore = try historyStore ?? JSONRunHistoryStore.applicationSupportStore() } catch { self.historyStore = JSONRunHistoryStore(directoryURL: fallback.appendingPathComponent("RunHistory")); presentedError = error.localizedDescription }
         }
-        let managed = ManagedProcessController(); managedProcesses = managed
-        let permission = SystemAccessibilityPermissionManager(); accessibilityPermission = permission
-        let windows = AXWindowLayoutController(permission: permission); windowController = windows
-        integrationDiscovery = NativeIntegrationDiscovery()
-        runningApplicationDiscovery = NSWorkspaceRunningApplicationDiscovery()
-        let approvals: JSONProcessApprovalStore
-        do { approvals = try JSONProcessApprovalStore.applicationSupportStore() }
-        catch { approvals = JSONProcessApprovalStore(fileURL: fallback.appendingPathComponent("process-approvals.json")); presentedError = error.localizedDescription }
-        approvalStore = approvals
-        launchAtLoginManager = SystemLaunchAtLoginManager()
-        notificationManager = SystemLocalNotificationManager()
-        let runner = FoundationProcessRunner()
-        self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: SystemKeychainStore(), windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner), additionalHealthChecker: DockerIntegrationHealthChecker(processRunner: runner))
+        if uiTesting {
+            let managed = UITestManagedProcessController(); managedProcesses = managed
+            let permission = UITestAccessibilityPermissionManager(); accessibilityPermission = permission
+            let windows = UITestWindowLayoutController(); windowController = windows
+            integrationDiscovery = UITestIntegrationDiscovery()
+            runningApplicationDiscovery = UITestRunningApplicationDiscovery()
+            let approvals = UITestProcessApprovalAuthorizer(); approvalStore = approvals
+            launchAtLoginManager = UITestLaunchAtLoginManager()
+            notificationManager = UITestNotificationManager()
+            let runner = UITestProcessRunner()
+            self.executor = executor ?? SceneExecutor(applicationOpener: UITestApplicationOpener(), urlOpener: UITestURLOpener(), processRunner: runner, fileOpener: UITestFileOpener(), managedProcesses: managed, windowController: windows, approvalAuthorizer: approvals)
+        } else {
+            let managed = ManagedProcessController(); managedProcesses = managed
+            let permission = SystemAccessibilityPermissionManager(); accessibilityPermission = permission
+            let windows = AXWindowLayoutController(permission: permission); windowController = windows
+            integrationDiscovery = NativeIntegrationDiscovery()
+            runningApplicationDiscovery = NSWorkspaceRunningApplicationDiscovery()
+            let approvals: JSONProcessApprovalStore
+            do { approvals = try JSONProcessApprovalStore.applicationSupportStore() }
+            catch { approvals = JSONProcessApprovalStore(fileURL: fallback.appendingPathComponent("process-approvals.json")); presentedError = error.localizedDescription }
+            approvalStore = approvals
+            launchAtLoginManager = SystemLaunchAtLoginManager()
+            notificationManager = SystemLocalNotificationManager()
+            let runner = FoundationProcessRunner()
+            self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: SystemKeychainStore(), windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner), additionalHealthChecker: DockerIntegrationHealthChecker(processRunner: runner))
+        }
         spokenStatus.enabled = UserDefaults.standard.bool(forKey: "spokenStatusEnabled")
         if !uiTesting { configureGlobalHotKey() }
         Task { await refresh() }
     }
 
-    func refresh() async { await loadScenes(); await loadHistory(); integrations = await integrationDiscovery.discover(); refreshCapturableApplications(); launchAtLoginStatus = launchAtLoginManager.status(); notificationPermissionStatus = await notificationManager.permissionStatus() }
+    func refresh() async { if uiTesting, ProcessInfo.processInfo.arguments.contains("--seed-ui-fixtures") { await seedUITestFixtures() }; await loadScenes(); await loadHistory(); integrations = await integrationDiscovery.discover(); refreshCapturableApplications(); launchAtLoginStatus = launchAtLoginManager.status(); notificationPermissionStatus = await notificationManager.permissionStatus() }
     func refreshCapturableApplications() { capturableApplications = runningApplicationDiscovery.discoverCapturableApplications(excludingBundleIdentifier: Bundle.main.bundleIdentifier) }
     func loadScenes() async { isLoading = true; defer { isLoading = false }; do { scenes = try await store.loadScenes() } catch { presentedError = error.localizedDescription } }
     func loadHistory() async {
@@ -350,4 +365,77 @@ final class AppModel: ObservableObject {
         case .unknown: presentedError = "The voice command was not recognized."
         }
     }
+
+    private func seedUITestFixtures() async {
+        do {
+            guard try await store.loadScenes().isEmpty else { return }
+            let scene = Scene(id: "ui-seeded-scene", name: "Seeded Workspace", description: "Deterministic local UI fixture", favorite: true, actions: [.wait(.init(id: "ui-wait", durationSeconds: 0.01, message: "Safe fixture"))])
+            try await store.save(scene)
+            var ready = SceneRunResult(scene: scene, id: "ui-ready-run", appVersion: appVersion)
+            ready.status = .ready
+            ready.startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+            ready.endedAt = Date(timeIntervalSince1970: 1_700_000_001)
+            if !ready.actionRecords.isEmpty { ready.actionRecords[0].status = .succeeded; ready.actionRecords[0].startedAt = ready.startedAt; ready.actionRecords[0].endedAt = ready.endedAt }
+            try await historyStore.save(ready)
+            if let requested = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--ui-run-status=") })?.split(separator: "=", maxSplits: 1).last {
+                var fixture = ready
+                switch requested {
+                case "readyWithWarnings":
+                    fixture.status = .readyWithWarnings
+                    if !fixture.actionRecords.isEmpty { fixture.actionRecords[0].status = .succeededWithWarning }
+                case "failed":
+                    fixture.status = .failed
+                    fixture.failedActionID = fixture.actionRecords.first?.id
+                    fixture.errorCategory = .healthCheck
+                    fixture.errorMessage = "Deterministic UI fixture failure."
+                    if !fixture.actionRecords.isEmpty { fixture.actionRecords[0].status = .failed; fixture.actionRecords[0].errorCategory = .healthCheck; fixture.actionRecords[0].errorMessage = fixture.errorMessage }
+                default: fixture.status = .ready
+                }
+                currentRun = fixture
+            }
+        } catch { presentedError = error.localizedDescription }
+    }
+}
+
+private struct UITestApplicationOpener: ApplicationOpening { func openApplication(bundleIdentifier: String) async throws {} }
+private struct UITestURLOpener: URLOpening { func openURL(_ url: URL) async throws {} }
+private struct UITestFileOpener: FileOpening { func openFile(at url: URL, applicationBundleIdentifier: String?, revealInFinder: Bool) async throws {} }
+private struct UITestProcessRunner: ProcessRunning {
+    func run(_ request: ProcessRequest) async throws -> ProcessExecutionResult { let now = Date(); return .init(stdout: "UI test process output", stderr: "", exitCode: 0, startedAt: now, endedAt: now, timedOut: false, cancelled: false) }
+}
+private actor UITestManagedProcessController: ManagedProcessControlling {
+    func start(_ action: ManagedProcessAction, environment: [String: String]) async throws -> ResourceRecord { .init(actionID: action.id, kind: "managedProcess", identifier: action.singleInstanceKey, ownership: .created) }
+    func stop(identifier: String, graceSeconds: Double) async throws {}
+    func snapshot(identifier: String) async -> ManagedProcessSnapshot? { nil }
+}
+private struct UITestAccessibilityPermissionManager: AccessibilityPermissionManaging {
+    func status() -> PermissionState { .notDetermined }
+    func requestExplicitly() -> PermissionState { .notDetermined }
+    func openSystemSettings() async {}
+}
+private struct UITestWindowLayoutController: WindowLayoutControlling {
+    func displays() -> [DisplayGeometry] { [.init(id: "ui-display", frame: .init(x: 0, y: 0, width: 1_440, height: 900), visibleFrame: .init(x: 0, y: 0, width: 1_440, height: 860), isMain: true)] }
+    func capture(bundleIdentifiers: Set<String>) async throws -> [CapturedWindow] { [] }
+    func apply(_ action: WindowLayoutAction) async throws -> WindowRestorationResult { .init(applied: action.placements.map(\.id), unmatched: [], warnings: []) }
+}
+private struct UITestIntegrationDiscovery: IntegrationDiscovering {
+    func discover() async -> [IntegrationDescriptor] { [.init(id: .terminal, displayName: "Terminal", installed: true, version: "UI Test", path: "/Applications/Utilities/Terminal.app", privacyNote: "Deterministic UI fixture."), .init(id: .docker, displayName: "Docker CLI", installed: false, privacyNote: "Deterministic UI fixture.")] }
+}
+private struct UITestRunningApplicationDiscovery: RunningApplicationDiscovering {
+    func discoverCapturableApplications(excludingBundleIdentifier: String?) -> [RunningApplicationDescriptor] { [.init(id: "com.apple.TextEdit", displayName: "TextEdit")] }
+}
+@MainActor private struct UITestLaunchAtLoginManager: LaunchAtLoginManaging {
+    func status() -> LaunchAtLoginStatus { .disabled }
+    func setEnabled(_ enabled: Bool) throws {}
+}
+private struct UITestNotificationManager: LocalNotificationManaging {
+    func permissionStatus() async -> PermissionState { .notDetermined }
+    func requestPermission() async throws -> Bool { false }
+    func notify(run: SceneRunResult) async throws {}
+}
+private actor UITestProcessApprovalAuthorizer: ProcessApprovalAuthorizing {
+    func isApproved(_ action: SceneAction) async throws -> Bool { true }
+    func approve(_ action: SceneAction, scope: ProcessApprovalScope) async throws {}
+    func consumeApproval(for action: SceneAction) async throws -> Bool { true }
+    func revoke(actionID: String) async throws {}
 }

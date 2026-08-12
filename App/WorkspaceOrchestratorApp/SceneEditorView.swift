@@ -19,14 +19,28 @@ struct SceneEditorView: View {
             Form {
                 Section("Scene") { TextField("Name", text: $draft.name); TextField("Description", text: Binding(get: { draft.description ?? "" }, set: { draft.description = $0.isEmpty ? nil : $0 }), axis: .vertical); TextField("SF Symbol", text: Binding(get: { draft.iconName ?? "" }, set: { draft.iconName = $0.isEmpty ? nil : $0 })); Toggle("Favorite", isOn: $draft.favorite); TextField("Tags, comma separated", text: Binding(get: { draft.tags.joined(separator: ", ") }, set: { draft.tags = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } })); Stepper("Maximum concurrency: \(draft.maximumConcurrency)", value: $draft.maximumConcurrency, in: 1...16) }
                 if let selected = selectedAction { Section("Selected Action") { LabeledContent("Stable action ID") { Text(action(for: selected)?.id ?? "").font(.caption.monospaced()).textSelection(.enabled) }; TextField("Action name", text: actionNameBinding(selected)); Toggle("Enabled", isOn: enabledBinding(selected)); Picker("Failure policy", selection: failureBinding(selected)) { Text("Stop scene").tag(FailurePolicy.stopScene); Text("Continue degraded").tag(FailurePolicy.continueDegraded); Text("Continue optional").tag(FailurePolicy.continueOptional); Text("Skip dependents").tag(FailurePolicy.skipDependents) }; Picker("Idempotency", selection: idempotencyBinding(selected)) { ForEach(IdempotencyPolicy.allCases, id: \.self) { Text($0.rawValue).tag($0) } }; Picker("Output retention", selection: outputBinding(selected)) { ForEach(OutputRetentionPolicy.allCases, id: \.self) { Text($0.rawValue).tag($0) } }; TextField("Action timeout seconds (optional)", text: timeoutBinding(selected)); Picker("Retry strategy", selection: retryStrategyBinding(selected)) { ForEach(RetryStrategy.allCases, id: \.self) { Text($0.rawValue).tag($0) } }; Stepper("Maximum attempts: \(action(for: selected)?.configuration.retryPolicy.maximumAttempts ?? 1)", value: retryAttemptsBinding(selected), in: 1...10); TextField("Dependencies (IDs, comma separated)", text: dependencyBinding(selected)); if let configuration = action(for: selected)?.configuration, !configuration.conditions.isEmpty || !configuration.healthChecks.isEmpty { LabeledContent("Advanced readiness", value: "\(configuration.conditions.count) conditions • \(configuration.healthChecks.count) checks"); Text("Conditions and health checks imported or created by integrations are preserved. Direct structured editing is intentionally limited until each check can be previewed safely.").font(.caption).foregroundStyle(.secondary) }; payloadEditor(selected) } }
-                if let validationMessage { Section { Text(validationMessage).foregroundStyle(ObsidianTokens.failure).textSelection(.enabled) } }
+                if let validationMessage { Section { Text(validationMessage).foregroundStyle(ObsidianTokens.failure).textSelection(.enabled).accessibilityIdentifier("sceneEditor.validation") } }
             }.formStyle(.grouped)
         }
-        .toolbar { ToolbarItemGroup(placement: .confirmationAction) { Button("Cancel") { dismiss() }; Button("Save") { do { try SceneValidator.validate(draft); validationMessage = nil; Task { await save(draft) } } catch { validationMessage = error.localizedDescription } }.buttonStyle(.borderedProminent) } }
+        .safeAreaInset(edge: .bottom) {
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") { validateAndSave() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut("s", modifiers: .command)
+                    .accessibilityIdentifier("sceneEditor.save")
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.bar)
+        }
         .navigationTitle(draft.name)
+        .accessibilityIdentifier("screen.sceneEditor")
     }
 
     private var selectedAction: ActionSelection? { selection }
+    private func validateAndSave() { do { try SceneValidator.validate(draft); validationMessage = nil; Task { await save(draft) } } catch { validationMessage = error.localizedDescription } }
     private func action(for selection: ActionSelection) -> SceneAction? { switch selection { case .start(let id): draft.actions.first { $0.id == id }; case .stop(let id): draft.deactivationActions.first { $0.id == id } } }
     private func replace(_ selection: ActionSelection, with action: SceneAction) { switch selection { case .start(let id): if let index = draft.actions.firstIndex(where: { $0.id == id }) { draft.actions[index] = action }; case .stop(let id): if let index = draft.deactivationActions.firstIndex(where: { $0.id == id }) { draft.deactivationActions[index] = action } } }
     private func updateConfiguration(_ selection: ActionSelection, _ body: (inout ActionConfiguration) -> Void) { guard let action = action(for: selection) else { return }; var configuration = action.configuration; body(&configuration); replace(selection, with: action.replacingConfiguration(configuration)) }

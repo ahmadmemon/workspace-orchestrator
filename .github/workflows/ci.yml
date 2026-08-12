@@ -42,13 +42,12 @@ jobs:
       - name: Run package tests
         run: swift test --parallel
 
-      - name: Run onboarding UI smoke test
+      - name: Run deterministic UI smoke suite
         run: >-
           xcodebuild -project WorkspaceOrchestrator.xcodeproj
           -scheme WorkspaceOrchestratorApp
           -destination 'platform=macOS,arch=arm64'
           -derivedDataPath .build/XcodeDerivedData-UITests
-          -only-testing:WorkspaceOrchestratorUITests/WorkspaceOrchestratorUITests/testOnboardingCanBeSkippedWithoutGrantingPermissions
           test
 
       - name: Build unsigned Debug app
