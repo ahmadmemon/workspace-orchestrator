@@ -16,6 +16,7 @@ public protocol ActionExecuting: Sendable { func execute(_ action: SceneAction) 
 public protocol HealthCheckExecuting: Sendable { func check(_ check: HealthCheck, resources: [ResourceRecord]) async throws -> String? }
 public protocol OrchestrationSleeping: Sendable { func sleep(seconds: TimeInterval) async throws }
 public protocol JitterSourcing: Sendable { func unitValue(actionID: String, attempt: Int) -> Double }
+public protocol ActionConditionEvaluating: Sendable { func evaluate(_ condition: ActionCondition) async throws -> Bool }
 
 public struct ContinuousOrchestrationSleeper: OrchestrationSleeping { public init() {} ; public func sleep(seconds: TimeInterval) async throws { try await Task.sleep(for: .seconds(seconds)) } }
 public struct DeterministicJitterSource: JitterSourcing {
@@ -23,11 +24,20 @@ public struct DeterministicJitterSource: JitterSourcing {
     public func unitValue(actionID: String, attempt: Int) -> Double { let value = actionID.utf8.reduce(UInt64(attempt)) { ($0 &* 1_099_511_628_211) ^ UInt64($1) }; return Double(value % 10_000) / 10_000 }
 }
 public struct NoHealthChecks: HealthCheckExecuting { public init() {} ; public func check(_ check: HealthCheck, resources: [ResourceRecord]) async throws -> String? { nil } }
+public struct LocalActionConditionEvaluator: ActionConditionEvaluating {
+    public init() {}
+    public func evaluate(_ condition: ActionCondition) async throws -> Bool {
+        switch condition {
+        case .pathExists(let path): return FileManager.default.fileExists(atPath: path)
+        case .environmentEquals(let name, let value): return ProcessInfo.processInfo.environment[name] == value
+        }
+    }
+}
 
 public struct OrchestrationEngine: Sendable {
     public typealias UpdateHandler = @Sendable (SceneRunResult) async -> Void
-    private let actionExecutor: any ActionExecuting; private let healthChecker: any HealthCheckExecuting; private let sleeper: any OrchestrationSleeping; private let jitter: any JitterSourcing; private let appVersion: String
-    public init(actionExecutor: any ActionExecuting, healthChecker: any HealthCheckExecuting = NoHealthChecks(), sleeper: any OrchestrationSleeping = ContinuousOrchestrationSleeper(), jitter: any JitterSourcing = DeterministicJitterSource(), appVersion: String = "unknown") { self.actionExecutor = actionExecutor; self.healthChecker = healthChecker; self.sleeper = sleeper; self.jitter = jitter; self.appVersion = appVersion }
+    private let actionExecutor: any ActionExecuting; private let healthChecker: any HealthCheckExecuting; private let sleeper: any OrchestrationSleeping; private let jitter: any JitterSourcing; private let conditionEvaluator: any ActionConditionEvaluating; private let appVersion: String
+    public init(actionExecutor: any ActionExecuting, healthChecker: any HealthCheckExecuting = NoHealthChecks(), sleeper: any OrchestrationSleeping = ContinuousOrchestrationSleeper(), jitter: any JitterSourcing = DeterministicJitterSource(), conditionEvaluator: any ActionConditionEvaluating = LocalActionConditionEvaluator(), appVersion: String = "unknown") { self.actionExecutor = actionExecutor; self.healthChecker = healthChecker; self.sleeper = sleeper; self.jitter = jitter; self.conditionEvaluator = conditionEvaluator; self.appVersion = appVersion }
 
     public func execute(scene: Scene, deactivating: Bool = false, onUpdate: UpdateHandler? = nil) async -> SceneRunResult {
         var effective = scene
@@ -95,6 +105,13 @@ public struct OrchestrationEngine: Sendable {
 
     private func executeAction(_ action: SceneAction, priorResources: [ResourceRecord]) async -> ActionResult {
         var record = ActionExecutionRecord(id: action.id, name: action.displayName, status: .running); record.startedAt = Date()
+        do {
+            for condition in action.configuration.conditions {
+                if !(try await conditionEvaluator.evaluate(condition)) { record.status = .skipped; record.skipReason = "A configured condition was not satisfied."; record.endedAt = Date(); return .init(record: record, resources: []) }
+            }
+        } catch {
+            record.status = .failed; record.errorCategory = .validation; record.errorMessage = "Condition evaluation failed: \(error.localizedDescription)"; record.endedAt = Date(); return .init(record: record, resources: [])
+        }
         let policy = action.configuration.retryPolicy; let totalStart = Date()
         for attempt in 1...max(1, policy.maximumAttempts) {
             if Task.isCancelled { record.status = .cancelled; record.errorCategory = .cancellation; record.errorMessage = "Execution was cancelled."; record.endedAt = Date(); return .init(record: record, resources: []) }

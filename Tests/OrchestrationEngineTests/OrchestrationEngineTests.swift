@@ -48,10 +48,88 @@ final class OrchestrationEngineTests: XCTestCase {
         XCTAssertEqual(result.status, .cancelled)
     }
 
+    func testRetryUsesInjectedSleeperAndRecordsAttempts() async {
+        let executor = FlakyExecutor(failuresBeforeSuccess: 2)
+        let sleeper = RecordingSleeper()
+        let retry = RetryPolicy(strategy: .exponential, maximumAttempts: 3, initialDelaySeconds: 1, maximumDelaySeconds: 10, maximumTotalDurationSeconds: 30, jitterFraction: 0)
+        let action = SceneAction.runProcess(.init(id: "retry", executable: "/usr/bin/true", configuration: .init(retryPolicy: retry)))
+        let result = await OrchestrationEngine(actionExecutor: executor, sleeper: sleeper).execute(scene: .init(name: "Retry", actions: [action]))
+        XCTAssertEqual(result.status, .ready)
+        XCTAssertEqual(result.actionRecords[0].attempts.count, 3)
+        let delays = await sleeper.values
+        XCTAssertEqual(delays, [1, 2])
+    }
+
+    func testCancellationInterruptsRetryDelay() async throws {
+        let retry = RetryPolicy(strategy: .fixed, maximumAttempts: 3, initialDelaySeconds: 10, maximumDelaySeconds: 10, maximumTotalDurationSeconds: 60)
+        let action = SceneAction.runProcess(.init(id: "retry", executable: "/usr/bin/true", configuration: .init(retryPolicy: retry)))
+        let task = Task { await OrchestrationEngine(actionExecutor: AlwaysFailingExecutor()).execute(scene: .init(name: "Retry cancellation", actions: [action])) }
+        try await Task.sleep(for: .milliseconds(20)); task.cancel()
+        let result = await task.value
+        XCTAssertEqual(result.status, .cancelled)
+    }
+
+    func testContinueDegradedProducesReadyWithWarnings() async {
+        let executor = RecordingExecutor(failing: ["warning"])
+        let action = SceneAction.runProcess(.init(id: "warning", executable: "/usr/bin/false", configuration: .init(failurePolicy: .continueDegraded)))
+        let result = await OrchestrationEngine(actionExecutor: executor).execute(scene: .init(name: "Degraded", actions: [action]))
+        XCTAssertEqual(result.status, .readyWithWarnings)
+    }
+
+    func testHealthFailureBlocksReadiness() async {
+        let check = HealthCheck.file(.init(path: "/not-used"))
+        let action = SceneAction.runProcess(.init(id: "health", executable: "/usr/bin/true", configuration: .init(healthChecks: [check])))
+        let result = await OrchestrationEngine(actionExecutor: RecordingExecutor(), healthChecker: FailingHealthChecker()).execute(scene: .init(name: "Health", actions: [action]))
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertEqual(result.actionRecords[0].errorCategory, .healthCheck)
+    }
+
+    func testDeactivationUsesOnlyStopPlan() async {
+        let executor = RecordingExecutor()
+        let scene = Scene(name: "Stop", actions: [process("start")], deactivationActions: [process("stop")])
+        let result = await OrchestrationEngine(actionExecutor: executor).execute(scene: scene, deactivating: true)
+        let starts = await executor.starts
+        XCTAssertEqual(result.status, .stopped)
+        XCTAssertEqual(starts, ["stop"])
+        XCTAssertEqual(result.actionRecords.map(\.id), ["stop"])
+    }
+
+    func testFalseConditionSkipsActionWithoutSideEffect() async {
+        let executor = RecordingExecutor()
+        let configuration = ActionConfiguration(conditions: [.pathExists("/not-used")])
+        let action = SceneAction.runProcess(.init(id: "conditional", executable: "/usr/bin/true", configuration: configuration))
+        let engine = OrchestrationEngine(actionExecutor: executor, conditionEvaluator: FixedConditionEvaluator(value: false))
+        let result = await engine.execute(scene: .init(name: "Conditions", actions: [action]))
+        let starts = await executor.starts
+        XCTAssertEqual(result.status, .ready)
+        XCTAssertEqual(result.actionRecords[0].status, .skipped)
+        XCTAssertTrue(starts.isEmpty)
+    }
+
+    func testLargeGraphHonorsConcurrencyBound() async {
+        let executor = RecordingExecutor()
+        let actions = (0..<60).map { process("node-\($0)") }
+        let result = await OrchestrationEngine(actionExecutor: executor).execute(scene: .init(name: "Large", actions: actions, maximumConcurrency: 7))
+        let maximum = await executor.maximumConcurrent
+        XCTAssertEqual(result.status, .ready)
+        XCTAssertEqual(result.completedActionCount, 60)
+        XCTAssertEqual(maximum, 7)
+    }
+
     private func process(_ id: String, dependencies: [String] = []) -> SceneAction {
         .runProcess(.init(id: id, executable: "/usr/bin/true", configuration: .init(dependencies: dependencies)))
     }
 }
+
+private actor FlakyExecutor: ActionExecuting {
+    private let failuresBeforeSuccess: Int; private var attempts = 0
+    init(failuresBeforeSuccess: Int) { self.failuresBeforeSuccess = failuresBeforeSuccess }
+    func execute(_ action: SceneAction) async throws -> ActionExecutionOutcome { attempts += 1; if attempts <= failuresBeforeSuccess { throw OrchestrationFailure(category: .processExit, message: "retry", retryableCategory: .processExit) }; return .init() }
+}
+private struct AlwaysFailingExecutor: ActionExecuting { func execute(_ action: SceneAction) async throws -> ActionExecutionOutcome { throw OrchestrationFailure(category: .processExit, message: "retry", retryableCategory: .processExit) } }
+private actor RecordingSleeper: OrchestrationSleeping { private(set) var values: [Double] = []; func sleep(seconds: TimeInterval) async throws { values.append(seconds) } }
+private struct FailingHealthChecker: HealthCheckExecuting { func check(_ check: HealthCheck, resources: [ResourceRecord]) async throws -> String? { throw OrchestrationFailure(category: .healthCheck, message: "not ready", retryableCategory: .healthCheck) } }
+private struct FixedConditionEvaluator: ActionConditionEvaluating { let value: Bool; func evaluate(_ condition: ActionCondition) async throws -> Bool { value } }
 
 private actor RecordingExecutor: ActionExecuting {
     private let failing: Set<String>; private(set) var starts: [String] = []; private(set) var maximumConcurrent = 0; private var concurrent = 0
