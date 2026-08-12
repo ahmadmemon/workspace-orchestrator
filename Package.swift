@@ -7,6 +7,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "SceneCore", targets: ["SceneCore"]),
+        .library(name: "OrchestrationEngine", targets: ["OrchestrationEngine"]),
         .library(name: "MacAutomation", targets: ["MacAutomation"])
     ],
     targets: [
@@ -15,9 +16,19 @@ let package = Package(
             path: "Packages/SceneCore/Sources/SceneCore"
         ),
         .target(
-            name: "MacAutomation",
+            name: "OrchestrationEngine",
             dependencies: ["SceneCore"],
+            path: "Packages/OrchestrationEngine/Sources/OrchestrationEngine"
+        ),
+        .target(
+            name: "MacAutomation",
+            dependencies: ["SceneCore", "OrchestrationEngine"],
             path: "Packages/MacAutomation/Sources/MacAutomation"
+        ),
+        .testTarget(
+            name: "OrchestrationEngineTests",
+            dependencies: ["OrchestrationEngine", "SceneCore"],
+            path: "Tests/OrchestrationEngineTests"
         ),
         .testTarget(
             name: "SceneCoreTests",

@@ -13,7 +13,7 @@ final class SceneExecutorTests: XCTestCase {
 
         let result = await executor.execute(scene: TestScene.valid)
 
-        XCTAssertEqual(result.status, .succeeded)
+        XCTAssertEqual(result.status, .ready)
         XCTAssertEqual(result.actionRecords.map(\.status), [.succeeded, .succeeded, .succeeded])
         let recordedEvents = await events.values
         let recordedBundleIdentifiers = await app.bundleIdentifiers
@@ -35,7 +35,7 @@ final class SceneExecutorTests: XCTestCase {
 
         XCTAssertEqual(result.status, .failed)
         XCTAssertEqual(result.failedActionID, "app")
-        XCTAssertEqual(result.actionRecords.map(\.status), [.failed, .pending, .pending])
+        XCTAssertEqual(result.actionRecords.map(\.status), [.failed, .skipped, .skipped])
         XCTAssertTrue(result.errorMessage?.contains("mock failure") == true)
         let recordedEvents = await events.values
         XCTAssertEqual(recordedEvents, ["app:com.apple.TextEdit"])
@@ -129,6 +129,7 @@ private enum TestScene {
             .openApplication(.init(id: "app", bundleIdentifier: "com.apple.TextEdit")),
             .openURL(.init(id: "url", url: "https://example.com")),
             .runProcess(.init(id: "process", executable: "/usr/bin/printf", arguments: ["done"]))
-        ]
+        ],
+        maximumConcurrency: 1
     )
 }

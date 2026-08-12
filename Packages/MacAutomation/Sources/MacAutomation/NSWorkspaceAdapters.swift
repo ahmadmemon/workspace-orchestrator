@@ -27,3 +27,16 @@ public struct NSWorkspaceURLOpener: URLOpening {
         }
     }
 }
+
+public struct NSWorkspaceFileOpener: FileOpening {
+    public init() {}
+    public func openFile(at url: URL, applicationBundleIdentifier: String?, revealInFinder: Bool) async throws {
+        if revealInFinder { NSWorkspace.shared.activateFileViewerSelecting([url]); return }
+        if let bundleIdentifier = applicationBundleIdentifier {
+            guard let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else { throw AutomationError.applicationNotFound(bundleIdentifier) }
+            let configuration = NSWorkspace.OpenConfiguration()
+            do { _ = try await NSWorkspace.shared.open([url], withApplicationAt: applicationURL, configuration: configuration) }
+            catch { throw AutomationError.fileOpenFailed(error.localizedDescription) }
+        } else if !NSWorkspace.shared.open(url) { throw AutomationError.fileOpenFailed(url.path) }
+    }
+}
