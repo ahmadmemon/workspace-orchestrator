@@ -1,12 +1,12 @@
 # Project Status
 
 - **Project name:** Workspace Orchestrator
-- **Current milestone:** Milestone 1 — Foundation + First Working Scene
-- **Current branch:** `main`
+- **Current milestone:** V1 Release Candidate — execution plan established, implementation in progress
+- **Current branch:** `feat/v1-release-candidate`
 - **Overall project completion estimate:** 16%
 - **Milestone 1 completion:** 98%
 - **GitHub repository status:** Public repository published at https://github.com/ahmadmemon/workspace-orchestrator with `main` tracking `origin/main` and five future-milestone tracking issues.
-- **Next milestone:** Milestone 2 — Reliable Orchestration, not started and blocked on Milestone 1 manual acceptance.
+- **Next milestone:** V1 combines the approved local-product scope of historical Milestones 2–5; Milestone 6 remains post-V1 hosted/team work.
 
 ## Completed work
 
@@ -20,7 +20,8 @@
 
 ## Work in progress
 
-- Manual visual and interaction smoke testing by Ahmad
+- V1 implementation tracked in `docs/V1_EXECUTION_PLAN.md`
+- Historical Milestone 1 manual visual and interaction smoke testing remains pending
 
 ## Remaining Milestone 1 work
 
