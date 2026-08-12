@@ -7,7 +7,7 @@ struct VoiceCommandView: View {
         VStack(spacing: 22) {
             WorkspaceCoreView(status: model.voiceListening ? .checking : .idle, progress: model.voiceListening ? 0.5 : 0, compact: true)
             Text(model.voiceListening ? "Listening on this Mac" : "Confirm Voice Command").font(.title2.bold())
-            Text(model.voiceTranscript.isEmpty ? "Say “Run” followed by an exact scene name, or ask to show Dashboard, Scenes, or History." : model.voiceTranscript)
+            Text(model.voiceTranscript.isEmpty ? "Say “\(model.voiceActivationPhrase), run” followed by an exact scene name, or ask to show Dashboard, Scenes, or History." : model.voiceTranscript)
                 .font(model.voiceTranscript.isEmpty ? .body : .title3)
                 .foregroundStyle(model.voiceTranscript.isEmpty ? ObsidianTokens.secondaryText : ObsidianTokens.primaryText)
                 .multilineTextAlignment(.center)

@@ -3,8 +3,16 @@ import Foundation
 public enum VoiceCommand: Equatable, Sendable { case runScene(String); case stopCurrent; case cancelCurrent; case showDashboard; case showScenes; case showHistory; case unknown(String) }
 public enum SceneMatch: Equatable, Sendable { case exact(String); case suggested(String, score: Double); case ambiguous([String]); case none }
 public enum VoiceCommandParser {
-    public static func parse(_ transcript: String) -> VoiceCommand {
-        let normalized = normalize(transcript)
+    public static func parse(_ transcript: String, activationPhrase: String? = nil) -> VoiceCommand {
+        var normalized = normalize(transcript)
+        if let activationPhrase {
+            let normalizedPhrase = normalize(activationPhrase)
+            if !normalizedPhrase.isEmpty, normalized == normalizedPhrase { return .unknown(transcript) }
+            if !normalizedPhrase.isEmpty, normalized.hasPrefix(normalizedPhrase + " ") {
+                normalized.removeFirst(normalizedPhrase.count)
+                normalized = normalized.trimmingCharacters(in: .whitespaces)
+            }
+        }
         if ["stop current workspace", "stop workspace"].contains(normalized) { return .stopCurrent }
         if ["cancel current run", "cancel run"].contains(normalized) { return .cancelCurrent }
         if ["show dashboard", "open dashboard"].contains(normalized) { return .showDashboard }

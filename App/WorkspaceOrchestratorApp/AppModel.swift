@@ -251,6 +251,7 @@ final class AppModel: ObservableObject {
     func resetOnboarding() { UserDefaults.standard.set(false, forKey: "onboardingCompleted"); onboardingPresented = true }
     var microphonePermissionStatus: ActivationPermissionStatus { LocalClapListener.microphonePermissionStatus }
     var speechPermissionStatus: ActivationPermissionStatus { OnDeviceVoiceRecognizer.speechPermissionStatus }
+    var voiceActivationPhrase: String { UserDefaults.standard.string(forKey: "voiceActivationPhrase") ?? "Workspace online" }
     func setClapEnabled(_ enabled: Bool) async {
         if !enabled {
             clapListener?.stop(); clapListener = nil; clapListening = false
@@ -275,7 +276,7 @@ final class AppModel: ObservableObject {
         if !speechAllowed { speechAllowed = await OnDeviceVoiceRecognizer.requestAuthorization() }
         guard speechAllowed else { presentedError = "Speech Recognition permission was not granted. No cloud fallback will be used."; return }
         let locale = UserDefaults.standard.string(forKey: "voiceLocaleIdentifier") ?? Locale.current.identifier
-        let phrase = UserDefaults.standard.string(forKey: "voiceActivationPhrase") ?? "Workspace online"
+        let phrase = voiceActivationPhrase
         let configuration = VoiceConfiguration(enabled: true, localeIdentifier: locale, activationPhrase: phrase)
         let sessionID = UUID(); voiceSessionID = sessionID; voiceListening = true; voicePanelPresented = true; voiceTranscript = ""; voiceSuggestedScene = nil; voiceAmbiguousScenes = []
         do {
@@ -349,7 +350,7 @@ final class AppModel: ObservableObject {
     private func finishVoiceCommand(_ transcript: String) {
         voiceRecognizer.stop(); voiceSessionID = nil; voiceListening = false
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { presentedError = "No voice command was recognized."; return }
-        switch VoiceCommandParser.parse(transcript) {
+        switch VoiceCommandParser.parse(transcript, activationPhrase: voiceActivationPhrase) {
         case .runScene(let query):
             switch VoiceCommandParser.match(sceneQuery: query, sceneNames: scenes.map(\.name)) {
             case .exact(let name): confirmVoiceScene(named: name)

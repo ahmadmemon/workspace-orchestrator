@@ -19,7 +19,7 @@
 - Added local activation by global shortcut, opt-in double clap, and explicit on-device voice command sessions, plus spoken status, notifications, launch at login, an overlay, and transparent permission controls.
 - Completed the native Obsidian Command Center experience: onboarding, menu bar, Workspace Core, dashboard, scene library/builder, current-run details, history, capture, integrations, permissions, settings, diagnostics, command palette, import review, approval flows, and an original icon.
 - Added release-candidate CI/release workflows, security and version gates, universal packaging, checksums, dependency inventory, SPDX SBOM, source provenance, and comprehensive user/developer/release documentation.
-- Expanded automated coverage from the 28-test baseline to 90 Swift package tests plus 4 deterministic XCUITests. All 94 tests pass locally with no skipped or flaky tests observed.
+- Expanded automated coverage from the 28-test baseline to 92 Swift package tests plus 4 deterministic XCUITests. All 96 tests pass locally with no skipped or flaky tests observed.
 
 ## Remaining release gates
 
@@ -42,7 +42,7 @@
 - `scripts/verify-version.sh`: passed (`Version verified: 1.0.0-rc.1 (1)`)
 - `swift build --target SceneCore`: passed
 - `swift build`: passed
-- `swift test`: 90 tests executed, 0 failures, 0 unexpected failures
+- `swift test`: 92 tests executed, 0 failures, 0 unexpected failures
 - `xcodebuild -quiet -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData-UITests test`: 4 tests, 0 result issues
 - Unsigned arm64 Debug app build: passed
 - Unsigned universal Release app build: passed

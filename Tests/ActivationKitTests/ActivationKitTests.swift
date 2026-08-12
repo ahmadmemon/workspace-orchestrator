@@ -14,6 +14,13 @@ final class ActivationKitTests: XCTestCase {
         XCTAssertEqual(VoiceCommandParser.parse("cancel current run"), .cancelCurrent)
         XCTAssertEqual(VoiceCommandParser.parse("show history"), .showHistory)
     }
+    func testVoiceParserStripsConfiguredActivationPhrase() {
+        XCTAssertEqual(VoiceCommandParser.parse("Workspace online, run Project H", activationPhrase: "Workspace online"), .runScene("project h"))
+        XCTAssertEqual(VoiceCommandParser.parse("My workspace show history", activationPhrase: "my workspace"), .showHistory)
+    }
+    func testVoiceParserDoesNotTreatActivationPhraseAloneAsCommand() {
+        XCTAssertEqual(VoiceCommandParser.parse("Workspace online", activationPhrase: "Workspace online"), .unknown("Workspace online"))
+    }
     func testValidDoubleClap() { var detector = DoubleClapDetector(configuration: enabled()); XCTAssertEqual(detector.consume(clap(1)), .firstTransient); XCTAssertEqual(detector.consume(clap(1.3)), .doubleClap) }
     func testSingleClapDoesNotActivate() { var detector = DoubleClapDetector(configuration: enabled()); XCTAssertEqual(detector.consume(clap(1)), .firstTransient); XCTAssertEqual(detector.consume(noise(2)), .none) }
     func testTooFastClapsAreRejected() { var detector = DoubleClapDetector(configuration: enabled()); _ = detector.consume(clap(1)); XCTAssertEqual(detector.consume(clap(1.03)), .rejected) }
