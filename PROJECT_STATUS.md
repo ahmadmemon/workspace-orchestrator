@@ -1,50 +1,55 @@
 # Project Status
 
 - **Project name:** Workspace Orchestrator
-- **Current milestone:** V1 Release Candidate — execution plan established, implementation in progress
+- **Current milestone:** V1 Release Candidate — local implementation and automated verification complete
 - **Current branch:** `feat/v1-release-candidate`
-- **Overall project completion estimate:** 16%
-- **Milestone 1 completion:** 98%
-- **GitHub repository status:** Public repository published at https://github.com/ahmadmemon/workspace-orchestrator with `main` tracking `origin/main` and five future-milestone tracking issues.
-- **Next milestone:** V1 combines the approved local-product scope of historical Milestones 2–5; Milestone 6 remains post-V1 hosted/team work.
+- **Overall project completion estimate:** 98%
+- **Release candidate version:** `1.0.0-rc.1` (build `1`)
+- **Product status:** Unsigned, unnotarized V1 release candidate
+- **GitHub repository:** https://github.com/ahmadmemon/workspace-orchestrator
+- **Publication status:** Branch push, pull request creation, and hosted CI verification are blocked by an invalid local GitHub CLI token.
+- **Post-V1 boundary:** Hosted collaboration, commercial/team features, and a cloud backend remain explicitly out of scope.
 
 ## Completed work
 
-- Native macOS 14 SwiftUI menu-bar target with provisional bundle identifier
-- SceneCore schema, validation, run models, demo definition, and atomic JSON persistence
-- MacAutomation protocols, native NSWorkspace adapters, structured Foundation Process runner, sequential executor, stop-on-failure, timeout, and cancellation
-- Dashboard run detail, scene CRUD/editor/reordering, deletion confirmation, settings, explicit demo installation, and visible errors
-- 28 automated tests covering domain, persistence, process, adapters, execution, and cancellation
-- GitHub Actions CI, Apache-2.0/open-source files, security model, product/architecture docs, ADRs, roadmap, and contributor guidance
-- Successful SceneCore build, full test suite, and native Xcode app build on 2026-08-09
+- Evolved the local scene format to schema V2 with atomic V1 migration, source backups, strict validation, trust state, typed actions, activation/deactivation plans, and backwards-conscious decoding.
+- Added deterministic dependency scheduling, bounded parallelism, retries, conditions, failure policies, typed health checks, cancellation, deactivation, managed-resource ownership, bounded history, and interrupted-run recovery.
+- Added protocol-backed local integrations for applications, URLs/browsers, files/folders, structured executables, VS Code-family editors, terminals, tmux, Docker Compose, Shortcuts, and window layouts.
+- Added reviewed workspace capture, normalized multi-display restoration, missing-display fallback, honest integration discovery, process approvals, Keychain references, redaction, and reviewed scene import/export.
+- Added local activation by global shortcut, opt-in double clap, and explicit on-device voice command sessions, plus spoken status, notifications, launch at login, an overlay, and transparent permission controls.
+- Completed the native Obsidian Command Center experience: onboarding, menu bar, Workspace Core, dashboard, scene library/builder, current-run details, history, capture, integrations, permissions, settings, diagnostics, command palette, import review, approval flows, and an original icon.
+- Added release-candidate CI/release workflows, security and version gates, universal packaging, checksums, dependency inventory, SPDX SBOM, source provenance, and comprehensive user/developer/release documentation.
+- Expanded automated coverage from the 28-test baseline to 90 Swift package tests plus 4 deterministic XCUITests. All 94 tests pass locally with no skipped or flaky tests observed.
 
-## Work in progress
+## Remaining release gates
 
-- V1 implementation tracked in `docs/V1_EXECUTION_PLAN.md`
-- Historical Milestone 1 manual visual and interaction smoke testing remains pending
+- Ahmad must perform the documented visual, keyboard, VoiceOver, permission, real-integration, multi-display, audio, and clean-machine acceptance checklist.
+- GitHub CLI authentication must be repaired before the branch can be pushed, the required unmerged pull request opened, milestone issue checklists updated, and hosted CI inspected.
+- Developer ID credentials and an Apple notarization profile are required to sign, notarize, staple, and publish a distributable release candidate.
+- Maintainer review and acceptance are required before merge; a stable `v1.0.0` tag or public stable release is not authorized yet.
 
-## Remaining Milestone 1 work
+## Known limitations
 
-- Confirm the menu-bar item, dashboard, scene editor, explicit demo installation, cancellation, and error presentation interactively
-- Add a real screenshot only after visual verification
+- The unsigned local package will trigger normal macOS trust warnings and is not suitable for public stable distribution.
+- The scene editor represents process arguments one per line, so it cannot author an argument containing a literal newline even though the model supports one.
+- Imported or integration-authored conditions and health checks are preserved and visible, but their advanced structured fields are not all directly editable in the V1 builder.
+- Real Accessibility behavior, permission prompts, hardware audio classification, live third-party tools, and multi-display matching cannot be fully covered by deterministic automated tests.
+- Xcode 15.4 reports non-fatal missing log-store-manifest and UI-result attachment-staging warnings in this local environment; builds and tests exit successfully and result metrics contain no test issues.
 
-## Known issues
+## Verification record — 2026-08-12
 
-- The application has no custom icon yet.
-- The scene editor accepts process arguments one per line and therefore cannot represent an argument containing a literal newline through the current UI, although the model supports it.
-- Active run state is held in memory; relaunch does not restore a previous run.
-- The development build is unsigned and unnotarized.
+- `scripts/security-audit.sh`: passed (`Security and documentation audit passed.`)
+- `scripts/verify-version.sh`: passed (`Version verified: 1.0.0-rc.1 (1)`)
+- `swift build --target SceneCore`: passed
+- `swift build`: passed
+- `swift test`: 90 tests executed, 0 failures, 0 unexpected failures
+- `xcodebuild -quiet -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData-UITests test`: 4 tests, 0 result issues
+- Unsigned arm64 Debug app build: passed
+- Unsigned universal Release app build: passed
+- Release executable architectures: `x86_64 arm64`
+- Built bundle version: `1.0.0-rc.1` (`1`)
+- Universal archive/package workflow: previously passed; a final clean-source unsigned package is produced after this status commit.
 
-## Known blockers
+## Baseline comparison
 
-- Interactive smoke testing cannot be truthfully completed without a person visually checking the running app.
-
-## Verification record
-
-- **Last successful SceneCore build command:** `swift build --target SceneCore`
-- **Last successful test command:** `swift test`
-- **Last successful app build command:** `xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData CODE_SIGNING_ALLOWED=NO build`
-- **Last successful build date:** 2026-08-09
-- **Last successful test date:** 2026-08-09
-- **Observed test result:** 28 tests executed, 0 failures, 0 unexpected failures
-- **Observed app build result:** `** BUILD SUCCEEDED **`
+Work began from clean revision `5f0e043`, where `main...origin/main` was `0 0`, 28 tests passed, and the unsigned arm64 Debug app built successfully. The V1 release-candidate branch preserves that baseline while adding the capabilities and verification recorded above.
