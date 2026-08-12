@@ -23,10 +23,16 @@ public struct ProcessApprovalDetails: Equatable, Sendable {
     public let arguments: [String]
     public let workingDirectory: String?
     public let environmentNames: [String]
+    public let environmentDescriptions: [String]
     public let timeout: Double?
     public let retryPolicy: RetryPolicy
     public let managed: Bool
     public let stopBehavior: String?
+    let environmentFingerprintComponents: [String]
+
+    public init(actionID: String, kind: String, executable: String, arguments: [String], workingDirectory: String?, environmentNames: [String], environmentDescriptions: [String] = [], timeout: Double?, retryPolicy: RetryPolicy, managed: Bool, stopBehavior: String?, environmentFingerprintComponents: [String] = []) {
+        self.actionID = actionID; self.kind = kind; self.executable = executable; self.arguments = arguments; self.workingDirectory = workingDirectory; self.environmentNames = environmentNames; self.environmentDescriptions = environmentDescriptions; self.timeout = timeout; self.retryPolicy = retryPolicy; self.managed = managed; self.stopBehavior = stopBehavior; self.environmentFingerprintComponents = environmentFingerprintComponents
+    }
 }
 
 public protocol ProcessApprovalAuthorizing: Sendable {
@@ -153,9 +159,11 @@ public extension SceneAction {
         let retry = configuration.retryPolicy
         switch self {
         case .runProcess(let value):
-            return .init(actionID: id, kind: "One-shot process", executable: value.executable, arguments: value.arguments, workingDirectory: value.workingDirectory, environmentNames: value.environment.keys.sorted(), timeout: value.timeoutSeconds ?? configuration.timeoutSeconds, retryPolicy: retry, managed: false, stopBehavior: nil)
+            let environment = approvalEnvironment(value.environment)
+            return .init(actionID: id, kind: "One-shot process", executable: value.executable, arguments: value.arguments, workingDirectory: value.workingDirectory, environmentNames: environment.names, environmentDescriptions: environment.descriptions, timeout: value.timeoutSeconds ?? configuration.timeoutSeconds, retryPolicy: retry, managed: false, stopBehavior: nil, environmentFingerprintComponents: environment.fingerprintComponents)
         case .managedProcess(let value):
-            return .init(actionID: id, kind: "Managed process", executable: value.executable, arguments: value.arguments, workingDirectory: value.workingDirectory, environmentNames: value.environment.keys.sorted(), timeout: configuration.timeoutSeconds, retryPolicy: retry, managed: true, stopBehavior: "Graceful stop after \(value.gracefulStopSeconds) seconds")
+            let environment = approvalEnvironment(value.environment)
+            return .init(actionID: id, kind: "Managed process", executable: value.executable, arguments: value.arguments, workingDirectory: value.workingDirectory, environmentNames: environment.names, environmentDescriptions: environment.descriptions, timeout: configuration.timeoutSeconds, retryPolicy: retry, managed: true, stopBehavior: "Graceful stop after \(value.gracefulStopSeconds) seconds", environmentFingerprintComponents: environment.fingerprintComponents)
         case .editorWorkspace(let value):
             var arguments = [value.editor.rawValue, value.projectPath, value.profile ?? "", String(value.newWindow)]
             arguments += value.files.map { "\($0.file):\($0.line.map(String.init) ?? ""):\($0.column.map(String.init) ?? "")" }
@@ -177,16 +185,31 @@ public enum ApprovalFingerprint {
         guard let details = action.processApprovalDetails else {
             throw FingerprintError.notExecutable
         }
-        let safe = ApprovalInput(kind: details.kind, executable: details.executable, arguments: details.arguments, workingDirectory: details.workingDirectory, environmentNames: details.environmentNames, timeout: details.timeout, retry: details.retryPolicy, managed: details.managed, stopBehavior: details.stopBehavior)
+        let safe = ApprovalInput(kind: details.kind, executable: details.executable, arguments: details.arguments, workingDirectory: details.workingDirectory, environmentConfiguration: details.environmentFingerprintComponents, timeout: details.timeout, retry: details.retryPolicy, managed: details.managed, stopBehavior: details.stopBehavior)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return SHA256.hexDigest(try encoder.encode(safe))
     }
 
     private struct ApprovalInput: Codable {
         let kind: String; let executable: String; let arguments: [String]; let workingDirectory: String?
-        let environmentNames: [String]; let timeout: Double?; let retry: RetryPolicy; let managed: Bool; let stopBehavior: String?
+        let environmentConfiguration: [String]; let timeout: Double?; let retry: RetryPolicy; let managed: Bool; let stopBehavior: String?
     }
     public enum FingerprintError: LocalizedError { case notExecutable; public var errorDescription: String? { "This action does not execute a binary and does not require a process fingerprint." } }
+}
+
+private func approvalEnvironment(_ values: [String: EnvironmentValue]) -> (names: [String], descriptions: [String], fingerprintComponents: [String]) {
+    let names = values.keys.sorted()
+    var descriptions: [String] = []
+    var components: [String] = []
+    for name in names {
+        guard let value = values[name] else { continue }
+        switch value {
+        case .plain(let plain): descriptions.append("\(name) (plain value)"); components.append("\(name)\u{0}plain\u{0}\(plain)")
+        case .secretReference(let reference): descriptions.append("\(name) (Keychain reference)"); components.append("\(name)\u{0}secretReference\u{0}\(reference)")
+        case .inherited: descriptions.append("\(name) (inherited)"); components.append("\(name)\u{0}inherited")
+        }
+    }
+    return (names, descriptions, components)
 }
 
 public struct RedactionConfiguration: Codable, Equatable, Sendable {

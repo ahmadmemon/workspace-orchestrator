@@ -12,5 +12,6 @@ The visual direction is **Obsidian Command Center with Apple-native interaction*
 - Motion indicates state change but is suppressed/reduced when requested.
 - Error content explains failure, impact, next action, and remaining resources.
 - Activation audio/voice always has a non-audio global-shortcut/menu alternative.
+- Scene Builder collection editors provide labeled Add/Remove and Move Up/Move Down controls in addition to list selection. Exact argument boundaries use numbered rows plus explicit empty/whitespace labels, and advanced readiness sections pair editable fields with a plain-language summary and inline validation output.
 
 The generated app-icon master is `docs/assets/AppIcon-master.png`; raster sizes and asset metadata live in the Xcode asset catalog. Human review at 1x/2x, light/dark desktop backgrounds, and all supported accessibility settings remains part of the smoke checklist.

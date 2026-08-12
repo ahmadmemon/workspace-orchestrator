@@ -15,7 +15,7 @@ struct ProcessApprovalView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(request.requiresImportTrustReview ? "Review Imported Scene" : (request.deactivating ? "Approve Stop Actions" : "Approve Executable Actions"))
                         .font(.title2.bold())
-                    Text("Nothing runs until you approve this exact configuration. Secret values are never shown or included in the fingerprint.")
+                    Text("Nothing runs until you approve this exact configuration. Keychain secret values are never shown or fingerprinted; changing an environment value type or Keychain reference invalidates approval.")
                         .foregroundStyle(ObsidianTokens.secondaryText)
                 }
             }
@@ -70,7 +70,7 @@ private struct ApprovalActionRow: View {
             approvalLine("Executable", details.executable)
             approvalLine("Arguments", details.arguments.isEmpty ? "None" : details.arguments.map(quoted).joined(separator: " "))
             approvalLine("Working directory", details.workingDirectory ?? "Default")
-            approvalLine("Environment names", details.environmentNames.isEmpty ? "None" : details.environmentNames.joined(separator: ", "))
+            approvalLine("Environment", details.environmentDescriptions.isEmpty ? "None" : details.environmentDescriptions.joined(separator: ", "))
             approvalLine("Timeout", details.timeout.map { "\($0) seconds" } ?? "Action default")
             approvalLine("Retry", "\(details.retryPolicy.strategy.rawValue), maximum \(details.retryPolicy.maximumAttempts) attempt(s)")
             approvalLine("Resource", details.managed ? "Managed" : "One shot")

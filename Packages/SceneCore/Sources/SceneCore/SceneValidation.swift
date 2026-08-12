@@ -36,22 +36,22 @@ public enum SceneValidator {
 
     private static func validatePlan(_ actions: [SceneAction], path: String) -> [ValidationIssue] {
         var issues: [ValidationIssue] = []
-        let IDs = actions.map(\.id)
-        let validIDs = Set(IDs)
+        let validActions = Dictionary(actions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var seen = Set<String>()
         for (index, action) in actions.enumerated() {
             let itemPath = "\(path)[\(index)]"
             if blank(action.id) { issues.append(.init(path: "\(itemPath).id", message: "Action ID must not be empty.")) }
             else if !seen.insert(action.id).inserted { issues.append(.init(path: "\(itemPath).id", message: "Action ID must be unique.")) }
-            issues += validateConfiguration(action.configuration, actionID: action.id, validIDs: validIDs, path: itemPath)
+            issues += validateConfiguration(action.configuration, actionID: action.id, validActions: validActions, path: itemPath)
             issues += validateAction(action, path: itemPath)
         }
         issues += cycleIssues(actions, path: path)
         return issues
     }
 
-    private static func validateConfiguration(_ value: ActionConfiguration, actionID: String, validIDs: Set<String>, path: String) -> [ValidationIssue] {
+    private static func validateConfiguration(_ value: ActionConfiguration, actionID: String, validActions: [String: SceneAction], path: String) -> [ValidationIssue] {
         var issues: [ValidationIssue] = []
+        let validIDs = Set(validActions.keys)
         for (index, dependency) in value.dependencies.enumerated() {
             if dependency == actionID { issues.append(.init(path: "\(path).configuration.dependencies[\(index)]", message: "An action cannot depend on itself.")) }
             else if !validIDs.contains(dependency) { issues.append(.init(path: "\(path).configuration.dependencies[\(index)]", message: "Dependency \(dependency) does not exist in this plan.")) }
@@ -63,7 +63,14 @@ public enum SceneValidator {
         if retry.strategy == .none, retry.maximumAttempts != 1 { issues.append(.init(path: "\(path).configuration.retryPolicy", message: "No-retry policy must have exactly one attempt.")) }
         if retry.initialDelaySeconds < 0 || retry.maximumDelaySeconds < retry.initialDelaySeconds || retry.maximumTotalDurationSeconds <= 0 { issues.append(.init(path: "\(path).configuration.retryPolicy", message: "Retry delays and total duration must be positive and internally consistent.")) }
         if !(0...0.5).contains(retry.jitterFraction) { issues.append(.init(path: "\(path).configuration.retryPolicy.jitterFraction", message: "Jitter must be between 0 and 0.5.")) }
-        for (index, check) in value.healthChecks.enumerated() { issues += validateCheck(check, path: "\(path).configuration.healthChecks[\(index)]") }
+        for index in value.disabledConditionIndexes where !value.conditions.indices.contains(index) { issues.append(.init(path: "\(path).configuration.disabledConditionIndexes", message: "Disabled condition index \(index) does not exist.")) }
+        for (index, condition) in value.conditions.enumerated() {
+            switch condition {
+            case .pathExists(let conditionPath): if !absolute(conditionPath) { issues.append(.init(path: "\(path).configuration.conditions[\(index)].path", message: "Condition path must be absolute.")) }
+            case .environmentEquals(let name, _): if !validEnvironmentName(name) { issues.append(.init(path: "\(path).configuration.conditions[\(index)].name", message: "Condition environment name is invalid.")) }
+            }
+        }
+        for (index, check) in value.healthChecks.enumerated() { issues += validateCheck(check, validActions: validActions, path: "\(path).configuration.healthChecks[\(index)]") }
         return issues
     }
 
@@ -135,7 +142,7 @@ public enum SceneValidator {
         return issues
     }
 
-    private static func validateCheck(_ check: HealthCheck, path: String) -> [ValidationIssue] {
+    private static func validateCheck(_ check: HealthCheck, validActions: [String: SceneAction], path: String) -> [ValidationIssue] {
         var issues: [ValidationIssue] = []
         switch check {
         case .http(let value):
@@ -145,10 +152,23 @@ public enum SceneValidator {
         case .tcp(let value):
             if blank(value.host) || !(1...65_535).contains(value.port) { issues.append(.init(path: path, message: "TCP host and port must be valid.")) }
             issues += validateCheckBounds(timeout: value.timeoutSeconds, interval: value.intervalSeconds, attempts: value.maximumAttempts, path: path)
-        case .process(let value): if blank(value.actionID) { issues.append(.init(path: "\(path).actionID", message: "Process check requires an action ID.")) }
-        case .application(let value): if !validBundleIdentifier(value.bundleIdentifier) { issues.append(.init(path: "\(path).bundleIdentifier", message: "Application check bundle identifier is invalid.")) }
-        case .file(let value): if !absolute(value.path) { issues.append(.init(path: "\(path).path", message: "File check path must be absolute.")) }
-        case .docker(let value): if blank(value.composeActionID) || !safeIdentifier(value.service) { issues.append(.init(path: path, message: "Docker check requires an action and safe service name.")) }
+        case .process(let value):
+            if blank(value.actionID) { issues.append(.init(path: "\(path).actionID", message: "Process check requires an action ID.")) }
+            else if validActions[value.actionID] == nil { issues.append(.init(path: "\(path).actionID", message: "Process check action ID does not exist in this plan.")) }
+            else if let target = validActions[value.actionID], case .managedProcess = target { } else { issues.append(.init(path: "\(path).actionID", message: "Process check must reference a managed-process action.")) }
+            issues += validateCheckBounds(timeout: value.timeoutSeconds ?? 3, interval: value.intervalSeconds ?? 1, attempts: value.maximumAttempts ?? 1, path: path)
+        case .application(let value):
+            if !validBundleIdentifier(value.bundleIdentifier) { issues.append(.init(path: "\(path).bundleIdentifier", message: "Application check bundle identifier is invalid.")) }
+            issues += validateCheckBounds(timeout: value.timeoutSeconds ?? 3, interval: value.intervalSeconds ?? 1, attempts: value.maximumAttempts ?? 1, path: path)
+        case .file(let value):
+            if !absolute(value.path) { issues.append(.init(path: "\(path).path", message: "File check path must be absolute.")) }
+            if let age = value.modifiedWithinSeconds, age <= 0 || age > 2_592_000 { issues.append(.init(path: "\(path).modifiedWithinSeconds", message: "Recent-modification age must be between 0 and 2592000 seconds.")) }
+            issues += validateCheckBounds(timeout: value.timeoutSeconds ?? 3, interval: value.intervalSeconds ?? 1, attempts: value.maximumAttempts ?? 1, path: path)
+        case .docker(let value):
+            if blank(value.composeActionID) || !safeIdentifier(value.service) { issues.append(.init(path: path, message: "Docker check requires an action and safe service name.")) }
+            else if validActions[value.composeActionID] == nil { issues.append(.init(path: "\(path).composeActionID", message: "Docker Compose action ID does not exist in this plan.")) }
+            else if let target = validActions[value.composeActionID], case .dockerCompose = target { } else { issues.append(.init(path: "\(path).composeActionID", message: "Docker check must reference a Docker Compose action.")) }
+            issues += validateCheckBounds(timeout: value.timeoutSeconds ?? 5, interval: value.intervalSeconds ?? 2, attempts: value.maximumAttempts ?? 15, path: path)
         }
         return issues
     }

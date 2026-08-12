@@ -133,6 +133,10 @@ final class AppModel: ObservableObject {
             self.executor = executor ?? SceneExecutor(applicationOpener: NSWorkspaceApplicationOpener(), urlOpener: NSWorkspaceURLOpener(), processRunner: runner, fileOpener: NSWorkspaceFileOpener(), managedProcesses: managed, keychain: secrets, windowController: windows, approvalAuthorizer: approvals, additionalActionExecutor: WorkspaceIntegrationExecutor(processRunner: runner), additionalHealthChecker: DockerIntegrationHealthChecker(processRunner: runner))
         }
         spokenStatus.enabled = UserDefaults.standard.bool(forKey: "spokenStatusEnabled")
+        if uiTesting {
+            if arguments.contains("--reset-onboarding") { UserDefaults.standard.removeObject(forKey: "onboardingCompleted") }
+            else { UserDefaults.standard.set(true, forKey: "onboardingCompleted"); onboardingPresented = false }
+        }
         if !uiTesting { configureGlobalHotKey() }
         Task { await self.historyStore.updateRetention(persistedRetention); await refresh() }
     }
@@ -662,14 +666,33 @@ final class AppModel: ObservableObject {
 
     private func seedUITestFixtures() async {
         do {
-            guard try await store.loadScenes().isEmpty else { return }
-            let scene = Scene(id: "ui-seeded-scene", name: "Seeded Workspace", description: "Deterministic local UI fixture", favorite: true, actions: [.wait(.init(id: "ui-wait", durationSeconds: 0.01, message: "Safe fixture"))])
+            for existing in try await store.loadScenes() { try await store.deleteScene(id: existing.id) }
+            try await historyStore.clear()
+            let advancedConfiguration = ActionConfiguration(
+                name: "Advanced Process",
+                conditions: [.pathExists("/tmp"), .environmentEquals(name: "UI_MODE", value: "test")],
+                conditionEvaluationMode: .any,
+                disabledConditionIndexes: [1],
+                healthChecks: [
+                    .http(.init(id: "ui-http", url: "http://127.0.0.1:8080/health", maximumAttempts: 1, required: false)),
+                    .tcp(.init(id: "ui-tcp", port: 8080, maximumAttempts: 1, required: false)),
+                    .file(.init(id: "ui-file", path: "/tmp", mustBeDirectory: true, maximumAttempts: 1, required: true)),
+                    .process(.init(id: "ui-process-check", actionID: "ui-managed", maximumAttempts: 1, required: false)),
+                    .application(.init(id: "ui-application", bundleIdentifier: "com.apple.TextEdit", maximumAttempts: 1, required: false)),
+                    .docker(.init(id: "ui-docker-check", composeActionID: "ui-docker", service: "web", maximumAttempts: 1, required: false))
+                ]
+            )
+            let scene = Scene(id: "ui-seeded-scene", name: "Seeded Workspace", description: "Deterministic local UI fixture", favorite: true, actions: [
+                .runProcess(.init(id: "ui-process", executable: "/usr/bin/printf", arguments: ["", "   ", "two\nlines"], configuration: advancedConfiguration)),
+                .managedProcess(.init(id: "ui-managed", executable: "/bin/sleep", arguments: ["1"], singleInstanceKey: "ui-managed")),
+                .dockerCompose(.init(id: "ui-docker", projectDirectory: "/tmp", services: ["web"]))
+            ])
             try await store.save(scene)
             var ready = SceneRunResult(scene: scene, id: "ui-ready-run", appVersion: appVersion)
             ready.status = .ready
-            ready.startedAt = Date(timeIntervalSince1970: 1_700_000_000)
-            ready.endedAt = Date(timeIntervalSince1970: 1_700_000_001)
-            if !ready.actionRecords.isEmpty { ready.actionRecords[0].status = .succeeded; ready.actionRecords[0].startedAt = ready.startedAt; ready.actionRecords[0].endedAt = ready.endedAt }
+            ready.startedAt = Date().addingTimeInterval(-1)
+            ready.endedAt = Date()
+            for index in ready.actionRecords.indices { ready.actionRecords[index].status = .succeeded; ready.actionRecords[index].startedAt = ready.startedAt; ready.actionRecords[index].endedAt = ready.endedAt }
             try await historyStore.save(ready)
             if let requested = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--ui-run-status=") })?.split(separator: "=", maxSplits: 1).last {
                 var fixture = ready

@@ -36,7 +36,7 @@ Live snapshots and completed run records are written separately from scene defin
 
 - Commands are an absolute executable plus `[String]` arguments and typed environment values.
 - Restricted executables and shell wrappers are rejected in validation and execution.
-- Exact process approvals bind executable, arguments, working directory, and environment references; one-time approvals are consumed.
+- Exact process approvals bind executable, the exact argument array, working directory, environment names/value kinds/configuration, Keychain reference identifiers, retry/timeout policy, and managed stop behavior; one-time approvals are consumed. Keychain secret values are neither shown nor included in fingerprints.
 - Secret environment values are Keychain references. Plain secret values are not serialized.
 - HTTP checks use normal platform TLS validation. TCP and all polling checks have explicit timeouts and bounded intervals.
 - Window control is isolated behind Accessibility permission and uses reviewed normalized placement data.

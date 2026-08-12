@@ -30,7 +30,9 @@ public struct DockerIntegrationHealthChecker: HealthCheckExecuting {
     public func check(_ check: HealthCheck, resources: [ResourceRecord]) async throws -> String? {
         guard case .docker(let value) = check else { throw OrchestrationFailure(category: .missingIntegration, message: "This adapter handles Docker health checks only.") }
         guard let resource = resources.last(where: { $0.actionID == value.composeActionID && $0.kind == "dockerCompose" }), let compose = try? DockerResourceIdentity.decode(resource.identifier).action else { throw OrchestrationFailure(category: .healthCheck, message: "Docker Compose ownership information is unavailable.", retryableCategory: .healthCheck) }
-        let result = try await processRunner.run(builder.dockerStatus(compose, service: value.service))
+        let result = try await processRunner.run(builder.dockerStatus(compose, service: value.service, timeoutSeconds: value.timeoutSeconds ?? 5))
+        if result.cancelled { throw CancellationError() }
+        if result.timedOut { throw OrchestrationFailure(category: .timeout, message: "Docker health check timed out.", retryableCategory: .healthCheck, processResult: result) }
         guard result.exitCode == 0 else { throw OrchestrationFailure(category: .docker, message: "Docker service status exited with \(result.exitCode).", retryableCategory: .healthCheck, processResult: result) }
         let bounded = String((result.stdout + result.stderr).prefix(65_536))
         guard bounded.localizedCaseInsensitiveContains("running") else { throw OrchestrationFailure(category: .healthCheck, message: "Docker service is not running.", retryableCategory: .healthCheck) }

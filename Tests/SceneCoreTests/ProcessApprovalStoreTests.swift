@@ -62,7 +62,44 @@ final class ProcessApprovalStoreTests: XCTestCase {
         let details = action.processApprovalDetails
 
         XCTAssertEqual(details?.environmentNames, ["MODE", "TOKEN"])
+        XCTAssertEqual(details?.environmentDescriptions, ["MODE (plain value)", "TOKEN (Keychain reference)"])
         XCTAssertFalse(details?.arguments.contains("keychain-id") == true)
+        XCTAssertFalse(details?.environmentDescriptions.contains(where: { $0.contains("keychain-id") }) == true)
+    }
+
+    func testEnvironmentConfigurationAndSecretReferenceChangesInvalidateApproval() async throws {
+        let store = makeStore()
+        let original = SceneAction.runProcess(.init(id: "process", executable: "/usr/bin/printf", environment: ["MODE": .plain("debug"), "TOKEN": .secretReference("keychain-a")]))
+        try await store.approve(original, scope: .exactAction)
+
+        let changedPlainValue = SceneAction.runProcess(.init(id: "process", executable: "/usr/bin/printf", environment: ["MODE": .plain("release"), "TOKEN": .secretReference("keychain-a")]))
+        let changedValueKind = SceneAction.runProcess(.init(id: "process", executable: "/usr/bin/printf", environment: ["MODE": .inherited, "TOKEN": .secretReference("keychain-a")]))
+        let changedSecretReference = SceneAction.runProcess(.init(id: "process", executable: "/usr/bin/printf", environment: ["MODE": .plain("debug"), "TOKEN": .secretReference("keychain-b")]))
+
+        let plainApproved = try await store.isApproved(changedPlainValue)
+        let kindApproved = try await store.isApproved(changedValueKind)
+        let referenceApproved = try await store.isApproved(changedSecretReference)
+        XCTAssertFalse(plainApproved)
+        XCTAssertFalse(kindApproved)
+        XCTAssertFalse(referenceApproved)
+    }
+
+    func testWorkingDirectoryTimeoutRetryAndManagedStopChangesInvalidateApproval() throws {
+        let originalConfiguration = ActionConfiguration(timeoutSeconds: 10, retryPolicy: .init(strategy: .fixed, maximumAttempts: 2))
+        let original = SceneAction.managedProcess(.init(id: "server", executable: "/usr/bin/yes", arguments: ["ok"], workingDirectory: "/tmp", singleInstanceKey: "server", gracefulStopSeconds: 5, configuration: originalConfiguration))
+        let originalFingerprint = try ApprovalFingerprint.make(for: original)
+
+        let directory = SceneAction.managedProcess(.init(id: "server", executable: "/usr/bin/yes", arguments: ["ok"], workingDirectory: "/var/tmp", singleInstanceKey: "server", gracefulStopSeconds: 5, configuration: originalConfiguration))
+        var timeoutConfiguration = originalConfiguration; timeoutConfiguration.timeoutSeconds = 20
+        let timeout = SceneAction.managedProcess(.init(id: "server", executable: "/usr/bin/yes", arguments: ["ok"], workingDirectory: "/tmp", singleInstanceKey: "server", gracefulStopSeconds: 5, configuration: timeoutConfiguration))
+        var retryConfiguration = originalConfiguration; retryConfiguration.retryPolicy.maximumAttempts = 3
+        let retry = SceneAction.managedProcess(.init(id: "server", executable: "/usr/bin/yes", arguments: ["ok"], workingDirectory: "/tmp", singleInstanceKey: "server", gracefulStopSeconds: 5, configuration: retryConfiguration))
+        let stop = SceneAction.managedProcess(.init(id: "server", executable: "/usr/bin/yes", arguments: ["ok"], workingDirectory: "/tmp", singleInstanceKey: "server", gracefulStopSeconds: 9, configuration: originalConfiguration))
+
+        XCTAssertNotEqual(try ApprovalFingerprint.make(for: directory), originalFingerprint)
+        XCTAssertNotEqual(try ApprovalFingerprint.make(for: timeout), originalFingerprint)
+        XCTAssertNotEqual(try ApprovalFingerprint.make(for: retry), originalFingerprint)
+        XCTAssertNotEqual(try ApprovalFingerprint.make(for: stop), originalFingerprint)
     }
 
     private func makeStore() -> JSONProcessApprovalStore {

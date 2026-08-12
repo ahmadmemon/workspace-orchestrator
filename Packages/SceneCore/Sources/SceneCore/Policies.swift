@@ -118,6 +118,11 @@ public enum ActionCondition: Codable, Equatable, Sendable {
     }
 }
 
+public enum ConditionEvaluationMode: String, Codable, CaseIterable, Sendable {
+    case all
+    case any
+}
+
 public enum HTTPMethod: String, Codable, CaseIterable, Sendable { case head = "HEAD"; case get = "GET" }
 
 public enum HealthCheck: Codable, Equatable, Identifiable, Sendable {
@@ -171,23 +176,43 @@ public struct HTTPHealthCheck: Codable, Equatable, Sendable {
     public var id: String; public var url: String; public var method: HTTPMethod
     public var expectedStatus: ClosedRange<Int>; public var responseContains: String?
     public var timeoutSeconds: Double; public var intervalSeconds: Double; public var maximumAttempts: Int
-    public init(id: String = UUID().uuidString, url: String, method: HTTPMethod = .get, expectedStatus: ClosedRange<Int> = 200...299, responseContains: String? = nil, timeoutSeconds: Double = 5, intervalSeconds: Double = 1, maximumAttempts: Int = 10) {
-        self.id = id; self.url = url; self.method = method; self.expectedStatus = expectedStatus; self.responseContains = responseContains; self.timeoutSeconds = timeoutSeconds; self.intervalSeconds = intervalSeconds; self.maximumAttempts = maximumAttempts
+    public var required: Bool?
+    public init(id: String = UUID().uuidString, url: String, method: HTTPMethod = .get, expectedStatus: ClosedRange<Int> = 200...299, responseContains: String? = nil, timeoutSeconds: Double = 5, intervalSeconds: Double = 1, maximumAttempts: Int = 10, required: Bool = true) {
+        self.id = id; self.url = url; self.method = method; self.expectedStatus = expectedStatus; self.responseContains = responseContains; self.timeoutSeconds = timeoutSeconds; self.intervalSeconds = intervalSeconds; self.maximumAttempts = maximumAttempts; self.required = required
     }
 }
 
 public struct TCPHealthCheck: Codable, Equatable, Sendable {
     public var id: String; public var host: String; public var port: Int
     public var timeoutSeconds: Double; public var intervalSeconds: Double; public var maximumAttempts: Int
-    public init(id: String = UUID().uuidString, host: String = "127.0.0.1", port: Int, timeoutSeconds: Double = 3, intervalSeconds: Double = 1, maximumAttempts: Int = 10) {
-        self.id = id; self.host = host; self.port = port; self.timeoutSeconds = timeoutSeconds; self.intervalSeconds = intervalSeconds; self.maximumAttempts = maximumAttempts
+    public var required: Bool?
+    public init(id: String = UUID().uuidString, host: String = "127.0.0.1", port: Int, timeoutSeconds: Double = 3, intervalSeconds: Double = 1, maximumAttempts: Int = 10, required: Bool = true) {
+        self.id = id; self.host = host; self.port = port; self.timeoutSeconds = timeoutSeconds; self.intervalSeconds = intervalSeconds; self.maximumAttempts = maximumAttempts; self.required = required
     }
 }
 
-public struct ProcessHealthCheck: Codable, Equatable, Sendable { public var id: String; public var actionID: String; public init(id: String = UUID().uuidString, actionID: String) { self.id = id; self.actionID = actionID } }
-public struct ApplicationHealthCheck: Codable, Equatable, Sendable { public var id: String; public var bundleIdentifier: String; public init(id: String = UUID().uuidString, bundleIdentifier: String) { self.id = id; self.bundleIdentifier = bundleIdentifier } }
-public struct FileHealthCheck: Codable, Equatable, Sendable { public var id: String; public var path: String; public var mustBeDirectory: Bool?; public var modifiedWithinSeconds: Double?; public init(id: String = UUID().uuidString, path: String, mustBeDirectory: Bool? = nil, modifiedWithinSeconds: Double? = nil) { self.id = id; self.path = path; self.mustBeDirectory = mustBeDirectory; self.modifiedWithinSeconds = modifiedWithinSeconds } }
-public struct DockerHealthCheck: Codable, Equatable, Sendable { public var id: String; public var composeActionID: String; public var service: String; public var requireHealthy: Bool; public init(id: String = UUID().uuidString, composeActionID: String, service: String, requireHealthy: Bool = true) { self.id = id; self.composeActionID = composeActionID; self.service = service; self.requireHealthy = requireHealthy } }
+public struct ProcessHealthCheck: Codable, Equatable, Sendable {
+    public var id: String; public var actionID: String; public var timeoutSeconds: Double?; public var intervalSeconds: Double?; public var maximumAttempts: Int?; public var required: Bool?
+    public init(id: String = UUID().uuidString, actionID: String, timeoutSeconds: Double = 3, intervalSeconds: Double = 1, maximumAttempts: Int = 1, required: Bool = true) { self.id = id; self.actionID = actionID; self.timeoutSeconds = timeoutSeconds; self.intervalSeconds = intervalSeconds; self.maximumAttempts = maximumAttempts; self.required = required }
+}
+public struct ApplicationHealthCheck: Codable, Equatable, Sendable {
+    public var id: String; public var bundleIdentifier: String; public var timeoutSeconds: Double?; public var intervalSeconds: Double?; public var maximumAttempts: Int?; public var required: Bool?
+    public init(id: String = UUID().uuidString, bundleIdentifier: String, timeoutSeconds: Double = 3, intervalSeconds: Double = 1, maximumAttempts: Int = 1, required: Bool = true) { self.id = id; self.bundleIdentifier = bundleIdentifier; self.timeoutSeconds = timeoutSeconds; self.intervalSeconds = intervalSeconds; self.maximumAttempts = maximumAttempts; self.required = required }
+}
+public struct FileHealthCheck: Codable, Equatable, Sendable {
+    public var id: String; public var path: String; public var mustBeDirectory: Bool?; public var modifiedWithinSeconds: Double?; public var timeoutSeconds: Double?; public var intervalSeconds: Double?; public var maximumAttempts: Int?; public var required: Bool?
+    public init(id: String = UUID().uuidString, path: String, mustBeDirectory: Bool? = nil, modifiedWithinSeconds: Double? = nil, timeoutSeconds: Double = 3, intervalSeconds: Double = 1, maximumAttempts: Int = 1, required: Bool = true) { self.id = id; self.path = path; self.mustBeDirectory = mustBeDirectory; self.modifiedWithinSeconds = modifiedWithinSeconds; self.timeoutSeconds = timeoutSeconds; self.intervalSeconds = intervalSeconds; self.maximumAttempts = maximumAttempts; self.required = required }
+}
+public struct DockerHealthCheck: Codable, Equatable, Sendable {
+    public var id: String; public var composeActionID: String; public var service: String; public var requireHealthy: Bool; public var timeoutSeconds: Double?; public var intervalSeconds: Double?; public var maximumAttempts: Int?; public var required: Bool?
+    public init(id: String = UUID().uuidString, composeActionID: String, service: String, requireHealthy: Bool = true, timeoutSeconds: Double = 5, intervalSeconds: Double = 2, maximumAttempts: Int = 15, required: Bool = true) { self.id = id; self.composeActionID = composeActionID; self.service = service; self.requireHealthy = requireHealthy; self.timeoutSeconds = timeoutSeconds; self.intervalSeconds = intervalSeconds; self.maximumAttempts = maximumAttempts; self.required = required }
+}
+
+public extension HealthCheck {
+    var isRequired: Bool {
+        switch self { case .http(let value): value.required ?? true; case .tcp(let value): value.required ?? true; case .process(let value): value.required ?? true; case .application(let value): value.required ?? true; case .file(let value): value.required ?? true; case .docker(let value): value.required ?? true }
+    }
+}
 
 public struct ActionConfiguration: Codable, Equatable, Sendable {
     public var name: String?
@@ -198,11 +223,35 @@ public struct ActionConfiguration: Codable, Equatable, Sendable {
     public var failurePolicy: FailurePolicy
     public var idempotencyPolicy: IdempotencyPolicy
     public var conditions: [ActionCondition]
+    public var conditionEvaluationMode: ConditionEvaluationMode
+    public var disabledConditionIndexes: Set<Int>
     public var healthChecks: [HealthCheck]
     public var outputRetention: OutputRetentionPolicy
 
-    public init(name: String? = nil, enabled: Bool = true, dependencies: [String] = [], timeoutSeconds: Double? = nil, retryPolicy: RetryPolicy = .init(), failurePolicy: FailurePolicy = .stopScene, idempotencyPolicy: IdempotencyPolicy = .alwaysRun, conditions: [ActionCondition] = [], healthChecks: [HealthCheck] = [], outputRetention: OutputRetentionPolicy = .summary) {
-        self.name = name; self.enabled = enabled; self.dependencies = dependencies; self.timeoutSeconds = timeoutSeconds; self.retryPolicy = retryPolicy; self.failurePolicy = failurePolicy; self.idempotencyPolicy = idempotencyPolicy; self.conditions = conditions; self.healthChecks = healthChecks; self.outputRetention = outputRetention
+    public init(name: String? = nil, enabled: Bool = true, dependencies: [String] = [], timeoutSeconds: Double? = nil, retryPolicy: RetryPolicy = .init(), failurePolicy: FailurePolicy = .stopScene, idempotencyPolicy: IdempotencyPolicy = .alwaysRun, conditions: [ActionCondition] = [], conditionEvaluationMode: ConditionEvaluationMode = .all, disabledConditionIndexes: Set<Int> = [], healthChecks: [HealthCheck] = [], outputRetention: OutputRetentionPolicy = .summary) {
+        self.name = name; self.enabled = enabled; self.dependencies = dependencies; self.timeoutSeconds = timeoutSeconds; self.retryPolicy = retryPolicy; self.failurePolicy = failurePolicy; self.idempotencyPolicy = idempotencyPolicy; self.conditions = conditions; self.conditionEvaluationMode = conditionEvaluationMode; self.disabledConditionIndexes = disabledConditionIndexes; self.healthChecks = healthChecks; self.outputRetention = outputRetention
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, enabled, dependencies, timeoutSeconds, retryPolicy, failurePolicy, idempotencyPolicy, conditions, conditionEvaluationMode, disabledConditionIndexes, healthChecks, outputRetention }
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        dependencies = try container.decodeIfPresent([String].self, forKey: .dependencies) ?? []
+        timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds)
+        retryPolicy = try container.decodeIfPresent(RetryPolicy.self, forKey: .retryPolicy) ?? .init()
+        failurePolicy = try container.decodeIfPresent(FailurePolicy.self, forKey: .failurePolicy) ?? .stopScene
+        idempotencyPolicy = try container.decodeIfPresent(IdempotencyPolicy.self, forKey: .idempotencyPolicy) ?? .alwaysRun
+        conditions = try container.decodeIfPresent([ActionCondition].self, forKey: .conditions) ?? []
+        conditionEvaluationMode = try container.decodeIfPresent(ConditionEvaluationMode.self, forKey: .conditionEvaluationMode) ?? .all
+        disabledConditionIndexes = try container.decodeIfPresent(Set<Int>.self, forKey: .disabledConditionIndexes) ?? []
+        healthChecks = try container.decodeIfPresent([HealthCheck].self, forKey: .healthChecks) ?? []
+        outputRetention = try container.decodeIfPresent(OutputRetentionPolicy.self, forKey: .outputRetention) ?? .summary
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(name, forKey: .name); try container.encode(enabled, forKey: .enabled); try container.encode(dependencies, forKey: .dependencies); try container.encodeIfPresent(timeoutSeconds, forKey: .timeoutSeconds); try container.encode(retryPolicy, forKey: .retryPolicy); try container.encode(failurePolicy, forKey: .failurePolicy); try container.encode(idempotencyPolicy, forKey: .idempotencyPolicy); try container.encode(conditions, forKey: .conditions); try container.encode(conditionEvaluationMode, forKey: .conditionEvaluationMode); try container.encode(disabledConditionIndexes, forKey: .disabledConditionIndexes); try container.encode(healthChecks, forKey: .healthChecks); try container.encode(outputRetention, forKey: .outputRetention)
     }
 }
 

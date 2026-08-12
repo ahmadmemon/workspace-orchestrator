@@ -45,7 +45,9 @@ struct DashboardView: View {
         .confirmationDialog("Run scene from double clap?", isPresented: Binding(get: { model.clapConfirmationScene != nil }, set: { if !$0 { model.clapConfirmationScene = nil } }), titleVisibility: .visible, presenting: model.clapConfirmationScene) { scene in Button("Run \(scene.name)") { model.confirmClapSceneRun() }; Button("Cancel", role: .cancel) { model.clapConfirmationScene = nil } } message: { scene in Text("Double-clap detection selected \(scene.name). Review this confirmation before any scene action executes.") }
         .alert("Workspace Orchestrator", isPresented: Binding(get: { model.presentedError != nil }, set: { if !$0 { model.presentedError = nil } })) { Button("OK") { model.presentedError = nil } } message: { Text(model.presentedError ?? "Unknown error") }
         .overlay(alignment: .center) { if model.overlayPresented, let run = model.currentRun { ActivationOverlay(run: run, cancel: model.cancelCurrentRun) { model.overlayPresented = false }.transition(.opacity) } }
-        .task { if UserDefaults.standard.object(forKey: "onboardingCompleted") == nil { model.onboardingPresented = true } }
+        .task {
+            if UserDefaults.standard.object(forKey: "onboardingCompleted") == nil { model.onboardingPresented = true }
+        }
     }
     private func prepareExport() { do { exportDocument = .init(data: try SceneArchiveService.export(model.scenes, appVersion: model.appVersion)); exportingScenes = true } catch { model.presentedError = error.localizedDescription } }
 }

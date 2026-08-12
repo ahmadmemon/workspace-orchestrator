@@ -106,6 +106,29 @@ final class OrchestrationEngineTests: XCTestCase {
         XCTAssertTrue(starts.isEmpty)
     }
 
+    func testAnyConditionModeAndDisabledConditionsUseOnlyEnabledRules() async {
+        let executor = RecordingExecutor()
+        let configuration = ActionConfiguration(conditions: [.pathExists("/false"), .pathExists("/true")], conditionEvaluationMode: .any, disabledConditionIndexes: [0])
+        let action = SceneAction.runProcess(.init(id: "conditional", executable: "/usr/bin/true", configuration: configuration))
+
+        let result = await OrchestrationEngine(actionExecutor: executor, conditionEvaluator: ConditionByPathEvaluator()).execute(scene: .init(name: "Any condition", actions: [action]))
+
+        let starts = await executor.starts
+        XCTAssertEqual(result.status, .ready)
+        XCTAssertEqual(starts, ["conditional"])
+    }
+
+    func testOptionalHealthFailureProducesVisibleWarningWithoutFailingAction() async {
+        let check = HealthCheck.file(.init(path: "/not-used", maximumAttempts: 1, required: false))
+        let action = SceneAction.runProcess(.init(id: "health", executable: "/usr/bin/true", configuration: .init(healthChecks: [check])))
+
+        let result = await OrchestrationEngine(actionExecutor: RecordingExecutor(), healthChecker: FailingHealthChecker()).execute(scene: .init(name: "Optional health", actions: [action]))
+
+        XCTAssertEqual(result.status, .readyWithWarnings)
+        XCTAssertEqual(result.actionRecords[0].status, .succeededWithWarning)
+        XCTAssertEqual(result.actionRecords[0].healthChecks.first?.status, .failed)
+    }
+
     func testLargeGraphHonorsConcurrencyBound() async {
         let executor = RecordingExecutor()
         let actions = (0..<60).map { process("node-\($0)") }
@@ -130,6 +153,7 @@ private struct AlwaysFailingExecutor: ActionExecuting { func execute(_ action: S
 private actor RecordingSleeper: OrchestrationSleeping { private(set) var values: [Double] = []; func sleep(seconds: TimeInterval) async throws { values.append(seconds) } }
 private struct FailingHealthChecker: HealthCheckExecuting { func check(_ check: HealthCheck, resources: [ResourceRecord]) async throws -> String? { throw OrchestrationFailure(category: .healthCheck, message: "not ready", retryableCategory: .healthCheck) } }
 private struct FixedConditionEvaluator: ActionConditionEvaluating { let value: Bool; func evaluate(_ condition: ActionCondition) async throws -> Bool { value } }
+private struct ConditionByPathEvaluator: ActionConditionEvaluating { func evaluate(_ condition: ActionCondition) async throws -> Bool { if case .pathExists(let path) = condition { return path == "/true" }; return false } }
 
 private actor RecordingExecutor: ActionExecuting {
     private let failing: Set<String>; private(set) var starts: [String] = []; private(set) var maximumConcurrent = 0; private var concurrent = 0

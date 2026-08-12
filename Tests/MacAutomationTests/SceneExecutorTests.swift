@@ -94,6 +94,19 @@ final class SceneExecutorTests: XCTestCase {
         let recordedEvents = await events.values
         XCTAssertTrue(recordedEvents.isEmpty)
     }
+
+    func testProcessArgumentsRemainAnExactStructuredArray() async {
+        let runner = MockProcessRunner(events: EventRecorder())
+        let arguments = ["", "   ", "two\nlines", "--literal=$VALUE"]
+        let scene = Scene(name: "Structured arguments", actions: [.runProcess(.init(id: "process", executable: "/usr/bin/printf", arguments: arguments))])
+        let executor = SceneExecutor(applicationOpener: MockApplicationOpener(events: EventRecorder()), urlOpener: MockURLOpener(events: EventRecorder()), processRunner: runner, approvalAuthorizer: AllowAllApprovals())
+
+        let result = await executor.execute(scene: scene)
+
+        let requests = await runner.requests
+        XCTAssertEqual(result.status, .ready)
+        XCTAssertEqual(requests.first?.arguments, arguments)
+    }
 }
 
 private enum TestError: LocalizedError { case failed; var errorDescription: String? { "mock failure" } }
@@ -128,8 +141,10 @@ private actor MockURLOpener: URLOpening {
 private actor MockProcessRunner: ProcessRunning {
     let events: EventRecorder
     let exitCode: Int32
+    private(set) var requests: [ProcessRequest] = []
     init(events: EventRecorder, exitCode: Int32 = 0) { self.events = events; self.exitCode = exitCode }
     func run(_ request: ProcessRequest) async throws -> ProcessExecutionResult {
+        requests.append(request)
         await events.record("process:\(request.executable)")
         return .init(stdout: "", stderr: "", exitCode: exitCode, startedAt: Date(), endedAt: Date(), timedOut: false, cancelled: false)
     }

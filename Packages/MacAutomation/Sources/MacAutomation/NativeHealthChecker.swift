@@ -41,12 +41,15 @@ public struct NativeHealthChecker: HealthCheckExecuting {
         switch check {
         case .http(let value): return try await checkHTTP(value)
         case .tcp(let value): return try await checkTCP(value)
-        case .process(let value): guard let resource = resources.last(where: { $0.actionID == value.actionID }), let snapshot = await managedProcesses?.snapshot(identifier: resource.identifier), snapshot.running else { throw OrchestrationFailure(category: .healthCheck, message: "Managed process is not running.", retryableCategory: .healthCheck) }; return "PID \(snapshot.processIdentifier) is running"
-        case .application(let value): guard NSRunningApplication.runningApplications(withBundleIdentifier: value.bundleIdentifier).isEmpty == false else { throw OrchestrationFailure(category: .healthCheck, message: "Application is not running.", retryableCategory: .healthCheck) }; return "Application is running"
-        case .file(let value): var isDirectory: ObjCBool = false; guard FileManager.default.fileExists(atPath: value.path, isDirectory: &isDirectory) else { throw OrchestrationFailure(category: .healthCheck, message: "Required path does not exist.", retryableCategory: .healthCheck) }; if let expected = value.mustBeDirectory, expected != isDirectory.boolValue { throw OrchestrationFailure(category: .healthCheck, message: "Required path has the wrong type.") }; if let maximumAge = value.modifiedWithinSeconds { let attributes = try FileManager.default.attributesOfItem(atPath: value.path); guard let modified = attributes[.modificationDate] as? Date, Date().timeIntervalSince(modified) <= maximumAge else { throw OrchestrationFailure(category: .healthCheck, message: "Required path was not modified recently enough.", retryableCategory: .healthCheck) } }; return "Path exists"
-        case .docker:
+        case .process(let value):
+            return try await retry(interval: value.intervalSeconds ?? 1, maximumAttempts: value.maximumAttempts ?? 1) { guard let resource = resources.last(where: { $0.actionID == value.actionID }), let snapshot = await managedProcesses?.snapshot(identifier: resource.identifier), snapshot.running else { throw OrchestrationFailure(category: .healthCheck, message: "Managed process is not running.", retryableCategory: .healthCheck) }; return "PID \(snapshot.processIdentifier) is running" }
+        case .application(let value):
+            return try await retry(interval: value.intervalSeconds ?? 1, maximumAttempts: value.maximumAttempts ?? 1) { guard NSRunningApplication.runningApplications(withBundleIdentifier: value.bundleIdentifier).isEmpty == false else { throw OrchestrationFailure(category: .healthCheck, message: "Application is not running.", retryableCategory: .healthCheck) }; return "Application is running" }
+        case .file(let value):
+            return try await retry(interval: value.intervalSeconds ?? 1, maximumAttempts: value.maximumAttempts ?? 1) { var isDirectory: ObjCBool = false; guard FileManager.default.fileExists(atPath: value.path, isDirectory: &isDirectory) else { throw OrchestrationFailure(category: .healthCheck, message: "Required path does not exist.", retryableCategory: .healthCheck) }; if let expected = value.mustBeDirectory, expected != isDirectory.boolValue { throw OrchestrationFailure(category: .healthCheck, message: "Required path has the wrong type.") }; if let maximumAge = value.modifiedWithinSeconds { let attributes = try FileManager.default.attributesOfItem(atPath: value.path); guard let modified = attributes[.modificationDate] as? Date, Date().timeIntervalSince(modified) <= maximumAge else { throw OrchestrationFailure(category: .healthCheck, message: "Required path was not modified recently enough.", retryableCategory: .healthCheck) } }; return "Path exists" }
+        case .docker(let value):
             guard let additionalHealthChecker else { throw OrchestrationFailure(category: .missingIntegration, message: "Docker health requires the Docker integration health adapter.", retryableCategory: .missingIntegration) }
-            return try await additionalHealthChecker.check(check, resources: resources)
+            return try await retry(interval: value.intervalSeconds ?? 2, maximumAttempts: value.maximumAttempts ?? 15) { try await additionalHealthChecker.check(check, resources: resources) }
         }
     }
     private func checkHTTP(_ value: HTTPHealthCheck) async throws -> String? {
@@ -65,5 +68,14 @@ public struct NativeHealthChecker: HealthCheckExecuting {
             do { try await tcpClient.connect(host: value.host, port: value.port, timeout: value.timeoutSeconds); return "TCP port \(value.port) accepted a connection" } catch { lastError = error.localizedDescription; if attempt < value.maximumAttempts { try await sleeper.sleep(seconds: value.intervalSeconds) } }
         }
         throw OrchestrationFailure(category: .healthCheck, message: lastError, retryableCategory: .healthCheck)
+    }
+    private func retry(interval: Double, maximumAttempts: Int, operation: () async throws -> String?) async throws -> String? {
+        var lastError: Error = OrchestrationFailure(category: .healthCheck, message: "Health check failed.", retryableCategory: .healthCheck)
+        for attempt in 1...max(1, maximumAttempts) {
+            do { return try await operation() }
+            catch is CancellationError { throw CancellationError() }
+            catch { lastError = error; if attempt < maximumAttempts { try await sleeper.sleep(seconds: interval) } }
+        }
+        throw lastError
     }
 }

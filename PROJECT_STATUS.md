@@ -17,12 +17,13 @@
 - Completed snapshot-backed Run History with scene/status/local-calendar date filtering, full action details, safe full or failed-and-dependent retry previews, current validation/approval/secret checks, scene-copy recovery, bounded redacted diagnostic export, storage reporting, selective deletion, configurable retention primitives, and corruption-preserving pruning.
 - Completed persisted Settings behavior for startup/default scene/menu actions, theme/effects/compact rows/sounds, activation choices, new-scene/action execution defaults, live history retention, non-revealing Keychain reference management, permission/integration state, allow-listed settings transfer, scoped reset, and confirmation-gated factory reset.
 - Completed double-clap calibration and resilience with aggregate ambient-noise confidence/warnings, a controlled no-action test mode, protocol-backed audio input, explicit resume after restart/configuration/route/interruption/hardware/permission pauses, automatic false-detection and unusable-noise pauses, and confirmation before configured scene activation.
+- Completed advanced Scene Builder authoring for all implemented conditions and health checks, including all/any and per-condition enablement, required/optional readiness, bounded check policies, exact structured argument-array editing, safe JSON previews, strict reference validation, and lossless archive/history/migration-compatible Codable round trips.
 - Added protocol-backed local integrations for applications, URLs/browsers, files/folders, structured executables, VS Code-family editors, terminals, tmux, Docker Compose, Shortcuts, and window layouts.
 - Added reviewed workspace capture, normalized multi-display restoration, missing-display fallback, honest integration discovery, process approvals, Keychain references, redaction, and reviewed scene import/export.
 - Added local activation by global shortcut, opt-in double clap, and explicit on-device voice command sessions, plus spoken status, notifications, launch at login, an overlay, and transparent permission controls.
 - Completed the native Obsidian Command Center foundation: onboarding, menu bar, Workspace Core, dashboard, scene library/builder, current-run details, searchable/status-filtered history, capture, integrations, permissions, settings tabs, diagnostics, command palette, import review, approval flows, and an original icon.
 - Added release-candidate CI/release workflows, security and version gates, universal packaging, checksums, dependency inventory, SPDX SBOM, source provenance, and comprehensive user/developer/release documentation.
-- Expanded automated coverage from the 28-test baseline to 92 Swift package tests plus 4 deterministic XCUITests. All 96 tests pass locally with no skipped or flaky tests observed.
+- Expanded automated coverage from the 28-test baseline to 118 Swift package tests plus 5 deterministic XCUITests. The latest verification record below is authoritative.
 
 ## Remaining release gates
 
@@ -34,8 +35,6 @@
 ## Known limitations
 
 - The unsigned local package will trigger normal macOS trust warnings and is not suitable for public stable distribution.
-- The scene editor represents process arguments one per line, so it cannot author an argument containing a literal newline even though the model supports one.
-- Imported or integration-authored conditions and health checks are preserved and visible, but their advanced structured fields are not all directly editable in the V1 builder.
 - Real Accessibility behavior, permission prompts, hardware audio classification, live third-party tools, and multi-display matching cannot be fully covered by deterministic automated tests.
 - Xcode 15.4 reports non-fatal missing log-store-manifest and UI-result attachment-staging warnings in this local environment; builds and tests exit successfully and result metrics contain no test issues.
 
@@ -45,8 +44,8 @@
 - `scripts/verify-version.sh`: passed (`Version verified: 1.0.0-rc.1 (1)`)
 - `swift build --target SceneCore`: passed
 - `swift build`: passed
-- `swift test`: 108 tests executed, 0 failures, 0 unexpected failures
-- `xcodebuild -quiet -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData-UITests test`: 4 tests, 0 result issues
+- `swift test`: 118 tests executed, 0 failures, 0 unexpected failures
+- `xcodebuild -quiet -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData-UITests test`: 5 tests executed, 0 failures, 0 unexpected failures
 - Unsigned arm64 Debug app build: passed
 - Unsigned universal Release app build: passed
 - Release executable architectures: `x86_64 arm64`

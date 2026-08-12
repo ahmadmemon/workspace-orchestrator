@@ -4,7 +4,9 @@
 
 A scene is a named, stable-ID workspace with activation actions and optional deactivation actions. Actions may depend on other action IDs. Independent ready actions can run in parallel up to the scene limit; visual list order remains the deterministic tie-breaker.
 
-Use Scene Builder to add supported actions and edit their typed fields. A required action normally stops dependent work on failure. `continue`, `skipDependents`, and `rollback` policies change that behavior explicitly. Retry policy defines maximum attempts, fixed/linear/exponential delay, jitter, and retryable categories. Conditions can require a path or environment value. Health checks determine readiness after execution.
+Use Scene Builder to add supported actions and edit their typed fields. A required action normally stops dependent work on failure. Continue-degraded, continue-optional, and skip-dependents policies change that behavior explicitly. Retry policy defines bounded attempts and fixed or exponential delay with optional jitter and typed retryable categories. Conditions can require an absolute path or an exact environment value; choose whether all or any enabled conditions must match. Health checks determine readiness after execution. HTTP, TCP, file/directory, managed-process, application, and Docker-service checks expose bounded timeout/interval/attempt policy and can be required or optional.
+
+One-shot and managed processes use a structured argument editor. Each row is one exact argument; empty strings, whitespace, tabs, and literal newlines are preserved. Reorder with the Move Up and Move Down buttons. The copyable preview is JSON containing an executable and argument array—not shell syntax—and execution continues to pass the array directly to the process API.
 
 ## Activating and stopping
 

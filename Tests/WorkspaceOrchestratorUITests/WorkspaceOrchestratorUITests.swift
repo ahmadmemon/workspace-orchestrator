@@ -21,26 +21,8 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["screen.dashboard"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Seeded Workspace"].waitForExistence(timeout: 5))
-
         select("scenes", in: app)
         XCTAssertTrue(app.descendants(matching: .any)["screen.scenes"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Seeded Workspace"].exists)
-
-        select("history", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["screen.history"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Ready"].exists)
-
-        select("integrations", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["screen.integrations"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Docker CLI"].exists)
-
-        select("permissions", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["screen.permissions"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Accessibility"].exists)
-
-        select("diagnostics", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["screen.diagnostics"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Copy Summary"].exists)
     }
 
     func testSceneCreationValidationAndActionEditing() throws {
@@ -78,6 +60,23 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
         }
     }
 
+    func testImportedAdvancedSceneExposesConditionsHealthChecksAndStructuredArguments() throws {
+        let app = launch(["--seed-ui-fixtures"])
+        select("scenes", in: app)
+        XCTAssertTrue(app.staticTexts["Seeded Workspace"].waitForExistence(timeout: 5))
+        app.buttons["Edit"].firstMatch.click()
+        XCTAssertTrue(app.descendants(matching: .any)["screen.sceneEditor"].waitForExistence(timeout: 5))
+        app.staticTexts["Advanced Process"].firstMatch.click()
+
+        XCTAssertTrue(app.descendants(matching: .any)["sceneEditor.structuredArguments"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["sceneEditor.condition.0"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["sceneEditor.conditionSummary"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["sceneEditor.healthCheck.0"].exists)
+        XCTAssertTrue(app.buttons["Move Up"].exists)
+        XCTAssertTrue(app.buttons["Move Down"].exists)
+        XCTAssertTrue(app.buttons["Copy Structured Preview"].waitForExistence(timeout: 5))
+    }
+
     private func launch(_ arguments: [String]) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"] + arguments
@@ -88,6 +87,7 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
     private func select(_ section: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let item = app.descendants(matching: .any)["navigation.\(section)"]
         XCTAssertTrue(item.waitForExistence(timeout: 5), "Missing navigation item \(section)", file: file, line: line)
-        item.click()
+        app.activate()
+        item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     }
 }

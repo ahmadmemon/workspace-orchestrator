@@ -24,8 +24,9 @@ final class IntegrationCommandBuilderTests: XCTestCase {
     }
     func testDockerStatusUsesStructuredArguments() throws {
         let action = DockerComposeAction(projectDirectory: "/tmp/project", composeFile: "/tmp/project/compose.yml")
-        let request = try builder.dockerStatus(action, service: "web")
+        let request = try builder.dockerStatus(action, service: "web", timeoutSeconds: 7)
         XCTAssertEqual(request.arguments, ["compose", "--project-directory", "/tmp/project", "--file", "/tmp/project/compose.yml", "ps", "--format", "json", "web"])
+        XCTAssertEqual(request.timeoutSeconds, 7)
     }
     func testDockerHealthUsesOwnedComposeIdentity() async throws {
         let runner = QueueProcessRunner(outputs: ["started", #"[{"Service":"web","State":"running","Health":"healthy"}]"#])

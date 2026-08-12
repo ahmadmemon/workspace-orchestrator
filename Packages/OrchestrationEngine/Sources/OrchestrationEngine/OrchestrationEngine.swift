@@ -106,8 +106,20 @@ public struct OrchestrationEngine: Sendable {
     private func executeAction(_ action: SceneAction, priorResources: [ResourceRecord]) async -> ActionResult {
         var record = ActionExecutionRecord(id: action.id, name: action.displayName, status: .running); record.startedAt = Date()
         do {
-            for condition in action.configuration.conditions {
-                if !(try await conditionEvaluator.evaluate(condition)) { record.status = .skipped; record.skipReason = "A configured condition was not satisfied."; record.endedAt = Date(); return .init(record: record, resources: []) }
+            let enabledConditions = action.configuration.conditions.enumerated().filter { !action.configuration.disabledConditionIndexes.contains($0.offset) }.map(\.element)
+            var conditionSatisfied = true
+            if !enabledConditions.isEmpty {
+                switch action.configuration.conditionEvaluationMode {
+                case .all:
+                    conditionSatisfied = true
+                    for condition in enabledConditions where conditionSatisfied { conditionSatisfied = try await conditionEvaluator.evaluate(condition) }
+                case .any:
+                    conditionSatisfied = false
+                    for condition in enabledConditions where !conditionSatisfied { conditionSatisfied = try await conditionEvaluator.evaluate(condition) }
+                }
+            }
+            if !conditionSatisfied {
+                record.status = .skipped; record.skipReason = "The enabled \(action.configuration.conditionEvaluationMode.rawValue) condition rule was not satisfied."; record.endedAt = Date(); return .init(record: record, resources: [])
             }
         } catch {
             record.status = .failed; record.errorCategory = .validation; record.errorMessage = "Condition evaluation failed: \(error.localizedDescription)"; record.endedAt = Date(); return .init(record: record, resources: [])
@@ -122,11 +134,21 @@ public struct OrchestrationEngine: Sendable {
                 let outcome: ActionExecutionOutcome
                 if case .wait(let wait) = action { try await sleeper.sleep(seconds: wait.durationSeconds); outcome = .init() } else { outcome = try await actionExecutor.execute(action) }
                 record.processResult = outcome.processResult; record.outputSummary = outcome.outputSummary.map { Redactor.redact($0) }
+                var optionalHealthWarning = false
                 if !action.configuration.healthChecks.isEmpty {
                     record.status = .checking
-                    for check in action.configuration.healthChecks { let message = try await healthChecker.check(check, resources: priorResources + outcome.resources); record.healthChecks.append(.init(id: check.id, kind: String(describing: check), attempt: attempt, status: .succeeded, message: message)) }
+                    for check in action.configuration.healthChecks {
+                        do {
+                            let message = try await healthChecker.check(check, resources: priorResources + outcome.resources)
+                            record.healthChecks.append(.init(id: check.id, kind: String(describing: check), attempt: attempt, status: .succeeded, message: message))
+                        } catch {
+                            record.healthChecks.append(.init(id: check.id, kind: String(describing: check), attempt: attempt, status: .failed, message: Redactor.redact(error.localizedDescription)))
+                            if check.isRequired { throw error }
+                            optionalHealthWarning = true
+                        }
+                    }
                 }
-                record.status = .succeeded; record.ownsResource = outcome.resources.contains { $0.ownership == .created }; record.endedAt = Date(); attemptRecord.status = .succeeded; attemptRecord.endedAt = Date(); record.attempts.append(attemptRecord); return .init(record: record, resources: outcome.resources)
+                record.status = optionalHealthWarning ? .succeededWithWarning : .succeeded; record.ownsResource = outcome.resources.contains { $0.ownership == .created }; record.endedAt = Date(); attemptRecord.status = record.status; attemptRecord.endedAt = Date(); record.attempts.append(attemptRecord); return .init(record: record, resources: outcome.resources)
             } catch {
                 if error is CancellationError || Task.isCancelled { attemptRecord.status = .cancelled; attemptRecord.errorCategory = .cancellation; attemptRecord.errorMessage = "Execution was cancelled."; attemptRecord.endedAt = Date(); record.attempts.append(attemptRecord); record.status = .cancelled; record.errorCategory = .cancellation; record.errorMessage = "Execution was cancelled."; record.endedAt = Date(); return .init(record: record, resources: []) }
                 let failure = error as? OrchestrationFailure ?? .init(category: .unknownInternal, message: error.localizedDescription)
