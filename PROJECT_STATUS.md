@@ -1,13 +1,13 @@
 # Project Status
 
 - **Project name:** Workspace Orchestrator
-- **Current milestone:** V1 Release Candidate — final local completion and publication pass in progress
+- **Current milestone:** V1 Release Candidate — software-complete, published for review, and awaiting external release gates
 - **Current branch:** `feat/v1-release-candidate`
 - **Overall project completion estimate:** 98%
 - **Release candidate version:** `1.0.0-rc.1` (build `1`)
-- **Product status:** Unsigned, unnotarized V1 release candidate
+- **Product status:** Ad-hoc signed, unnotarized V1 release candidate
 - **GitHub repository:** https://github.com/ahmadmemon/workspace-orchestrator
-- **Publication status:** Local completion is in progress; GitHub authentication, push, pull-request creation, issue updates, and hosted CI are rechecked during the publication step.
+- **Publication status:** Branch pushed; draft PR #6 remains open and unmerged; issues #1–#4 carry implementation evidence; both hosted CI workflows for revision `013bb7f` passed end to end.
 - **Post-V1 boundary:** Hosted collaboration, commercial/team features, and a cloud backend remain explicitly out of scope.
 
 ## Completed work
@@ -28,29 +28,29 @@
 ## Remaining release gates
 
 - Ahmad must perform the documented visual, keyboard, VoiceOver, permission, real-integration, multi-display, audio, and clean-machine acceptance checklist.
-- GitHub authentication must be valid before the branch can be pushed, the required unmerged pull request opened, milestone issue checklists updated, and hosted CI inspected.
 - Developer ID credentials and an Apple notarization profile are required to sign, notarize, staple, and publish a distributable release candidate.
 - Maintainer review and acceptance are required before merge; a stable `v1.0.0` tag or public stable release is not authorized yet.
 
 ## Known limitations
 
-- The unsigned local package will trigger normal macOS trust warnings and is not suitable for public stable distribution.
+- The ad-hoc signed local package preserves bundle integrity and launches locally, but it has no Developer ID identity or Apple notarization ticket and is not suitable for public stable distribution.
 - Real Accessibility behavior, permission prompts, hardware audio classification, live third-party tools, and multi-display matching cannot be fully covered by deterministic automated tests.
 - Xcode 15.4 reports non-fatal missing log-store-manifest and UI-result attachment-staging warnings in this local environment; builds and tests exit successfully and result metrics contain no test issues.
 
-## Verification record — 2026-08-12
+## Verification record — 2026-08-13
 
 - `scripts/security-audit.sh`: passed (`Security and documentation audit passed.`)
 - `scripts/verify-version.sh`: passed (`Version verified: 1.0.0-rc.1 (1)`)
 - `swift build --target SceneCore`: passed
 - `swift build`: passed
 - `swift test`: 133 tests executed, 0 failures, 0 unexpected failures
-- UI acceptance: 7 tests previously executed with 0 failures; 9-case source now compiles, with final execution pending an unlocked interactive Mac (a locked session renders the windows but prevents XCTest accessibility attachment)
-- Unsigned arm64 Debug app build: passed
-- Unsigned universal Release app build: passed
+- UI acceptance: 9 deterministic XCUITests executed with 0 failures in both hosted workflows for revision `013bb7f`; focused local reruns also passed after selector stabilization
+- Ad-hoc signed arm64 Debug app build: passed; `codesign --verify --deep --strict` passed and the bundle launched successfully
+- Universal Release app build: passed in both hosted workflows
 - Release executable architectures: `x86_64 arm64`
 - Built bundle version: `1.0.0-rc.1` (`1`)
-- Universal archive/package workflow: previously passed; a final clean-source unsigned package is produced after this status commit.
+- Hosted CI: passed twice end to end in runs `31663798383` and `31663800592`, including audit, version gate, 133 package tests, 9 UI tests, Debug build, universal Release build, ad-hoc signing, verification-package creation, and artifact upload
+- Final local release artifact target: `dist/1.0.0-rc.1/`; produced from the clean final status revision after this documentation commit
 
 ## Baseline comparison
 

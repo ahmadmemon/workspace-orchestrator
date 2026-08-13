@@ -55,15 +55,15 @@ Human verification remains required for navigation polish, every VoiceOver/focus
 - [x] Expand deterministic unit/integration/security/reliability/performance coverage from the 28-test baseline to 133 passing package tests and 9 deterministic XCUITests covering onboarding, core authoring/status, exact structured arguments, History retry/export entry points, persisted Settings, Keychain/reset surfaces, and clap state.
 - [x] Add user, quick-start, builder, integration, permissions, privacy, threat, troubleshooting, import/export, design, scope, smoke-test, and release documentation.
 - [x] Set `1.0.0-rc.1` build 1, hardened runtime, limited entitlement, version/security gates, and non-overwriting universal packaging with checksums/inventory/provenance.
-- [ ] Verify PR/main CI and credential-gated release automation after workflow changes are committed and pushed.
+- [x] Verify PR CI and credential-gated release automation after workflow changes are committed and pushed; both hosted workflows for revision `013bb7f` passed all non-credentialed stages.
 - [x] Execute the full local Debug/Release/universal archive/security verification matrix after final code changes.
 
 ## 7. Audit and publication
 
 - [x] Review full diff/status, warnings, test counts, artifact contents, architecture slices, security matches, and documentation links.
 - [x] Update `PROJECT_STATUS.md` and this plan with exact final local evidence.
-- [ ] Push branch, open the requested unmerged PR, inspect CI, and fix repository-caused failures.
-- [ ] Complete the human/credential checklist or record each external blocker without claiming success.
+- [x] Push branch, open the requested unmerged draft PR #6, inspect CI, and fix repository-caused failures.
+- [x] Record the remaining human and Apple-credential gates without claiming they passed.
 
 ## Verification commands
 
@@ -78,13 +78,12 @@ xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestrato
 OUTPUT_DIR=/absolute/new/output scripts/build-release.sh
 ```
 
-The first incremental `swift test` after public scheduler-model changes crashed in stale SwiftPM ABI/cache state (signals 10/11). `swift package clean` followed by a full rebuild passed all tests, confirming an environment-derived cache issue rather than a reproducible source failure. The latest full package suite passed 133 tests. Seven UI cases passed before the final two cases were added; the nine-case source compiles, but its final execution requires the local Mac to be unlocked so XCTest can attach to the SwiftUI accessibility hierarchy.
+The first incremental `swift test` after public scheduler-model changes crashed in stale SwiftPM ABI/cache state (signals 10/11). `swift package clean` followed by a full rebuild passed all tests, confirming an environment-derived cache issue rather than a reproducible source failure. The latest full package suite passed 133 tests. Both hosted workflows for revision `013bb7f` executed all 9 deterministic XCUITests with 0 failures and completed Debug, universal Release, ad-hoc signing, packaging, and artifact upload successfully. Local UI runs can still be delayed or interrupted by unrelated desktop overlays, so hosted clean-runner results are the authoritative UI record.
 
 ## External release gates
 
 - Human visual, keyboard, VoiceOver, permission, real-integration, multi-display, audio, and clean-machine testing
 - Apple Developer ID signing identity and notarization Keychain profile
-- Valid GitHub CLI authentication for branch publication, pull-request creation, milestone issue updates, and hosted CI inspection
-- Maintainer approval and passing hosted CI
+- Maintainer review and approval of draft PR #6
 
 No stable V1 tag or automatic merge is authorized before these gates pass.
