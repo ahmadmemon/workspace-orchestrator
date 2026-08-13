@@ -47,7 +47,7 @@ Read [Architecture](docs/ARCHITECTURE.md), [Security model](docs/SECURITY_MODEL.
 swift build --target SceneCore
 swift build
 swift test
-xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- build
 ```
 
 Release verification and packaging:
@@ -64,7 +64,7 @@ The deterministic macOS UI suite is run separately with Xcode on an unlocked des
 xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData test
 ```
 
-The release script refuses to overwrite an existing output directory, tests first, archives a universal `arm64`/`x86_64` app, and emits a ZIP, checksum, dependency inventory, source revision, and toolchain record. Signing and notarization run only when the documented credentials are configured.
+The release script refuses to overwrite an existing output directory, tests first, archives a universal `arm64`/`x86_64` app, and emits a ZIP, checksum, dependency inventory, source revision, and toolchain record. Without release credentials it applies and verifies an ad-hoc integrity signature so the bundle is not malformed, but that is not Developer ID trust or Gatekeeper readiness. Developer ID signing and notarization run only when the documented credentials are configured.
 
 ## Local development
 

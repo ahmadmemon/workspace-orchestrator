@@ -29,7 +29,7 @@ mkdir -p "$output_root"
 "$repository_root/scripts/security-audit.sh"
 swift test
 
-signing_arguments=(CODE_SIGNING_ALLOWED=NO)
+signing_arguments=(CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=-)
 if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
   signing_arguments=(CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$DEVELOPER_ID_APPLICATION")
 fi
@@ -50,10 +50,10 @@ xcodebuild archive \
 app_path="$archive_path/Products/Applications/$app_name"
 if [[ ! -d "$app_path" ]]; then echo "Archive did not contain $app_path"; exit 1; fi
 lipo -info "$app_path/Contents/MacOS/Workspace Orchestrator"
-codesign --verify --deep --strict "$app_path" 2>/dev/null || {
-  if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then echo "Signed bundle verification failed."; exit 1; fi
-  echo "Unsigned bundle verified structurally; codesign verification is credential-gated."
-}
+codesign --verify --deep --strict "$app_path"
+if [[ -z "${DEVELOPER_ID_APPLICATION:-}" ]]; then
+  echo "Ad-hoc integrity signature verified; Developer ID trust and notarization remain credential-gated."
+fi
 
 cat > "$output_root/dependency-inventory.json" <<EOF
 {

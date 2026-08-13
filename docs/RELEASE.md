@@ -13,12 +13,12 @@ swift package clean
 swift build --target SceneCore
 swift build
 swift test
-xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -configuration Release -destination 'platform=macOS' -derivedDataPath .build/XcodeDerivedData CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build
+xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- build
+xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -configuration Release -destination 'platform=macOS' -derivedDataPath .build/XcodeDerivedData CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build
 OUTPUT_DIR=/absolute/new/output scripts/build-release.sh
 ```
 
-The package script refuses to overwrite output or package a dirty tree. It reruns version/security/tests, creates an archive, checks architecture, packages the app, and writes `SHA256SUMS.txt`, `dependency-inventory.json`, `sbom.spdx.json`, `source-revision.txt`, `source-tree-state.txt`, and `toolchain.txt`. `ALLOW_DIRTY_RELEASE=1` exists only for local non-publishable verification and records `dirty` in the provenance.
+The package script refuses to overwrite output or package a dirty tree. It reruns version/security/tests, creates an archive, checks architecture, verifies the bundle signature, packages the app, and writes `SHA256SUMS.txt`, `dependency-inventory.json`, `sbom.spdx.json`, `source-revision.txt`, `source-tree-state.txt`, and `toolchain.txt`. Without Developer ID credentials the signature is ad-hoc: it protects bundle integrity and avoids malformed-signature “damaged” errors for local builds, but it does not establish publisher identity, notarization, or Gatekeeper readiness. `ALLOW_DIRTY_RELEASE=1` exists only for local non-publishable verification and records `dirty` in the provenance.
 
 ## Signing and notarization
 
