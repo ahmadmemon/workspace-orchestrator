@@ -77,7 +77,11 @@ struct SettingsView: View {
     @State private var calibrationSensitivityDraft = 0.65
     @State private var calibrationMinimumDraft = 0.12
     @State private var calibrationMaximumDraft = 0.65
-    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--ui-settings-activation") ? "activation" : "general"
+    @State private var selectedTab = {
+        let arguments = ProcessInfo.processInfo.arguments
+        for tab in ["general", "appearance", "activation", "execution", "privacy", "permissions", "integrations", "advanced", "about"] where arguments.contains("--ui-settings-\(tab)") { return tab }
+        return "general"
+    }()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -186,7 +190,7 @@ struct SettingsView: View {
             }
             Section("Double clap — opt in") {
                 Toggle("Enable local double-clap detection", isOn: Binding(get: { model.clapEnabled }, set: { enabled in Task { await model.setClapEnabled(enabled) } }))
-                LabeledContent("Detector state", value: model.clapState.displayName)
+                LabeledContent("Detector state", value: model.clapState.displayName).accessibilityIdentifier("settings.clapState")
                 Text("Guided calibration analyzes only bounded energy, duration, spectrum, timing, and noise features on this Mac. It never stores or transmits audio.").font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("settings.clapPrivacy")
                 HStack {
                     Button("Start Guided Calibration") { Task { await model.beginClapCalibration() } }.disabled(model.clapState.isCalibrating || model.clapState == .testing).accessibilityIdentifier("settings.clapCalibration.start")
@@ -282,7 +286,7 @@ struct SettingsView: View {
                 Text("Values are written directly to macOS Keychain and are never displayed, exported, logged, or stored in scene JSON.").font(.callout).foregroundStyle(.secondary)
                 TextField("New reference identifier", text: $newReferenceID)
                 SecureField("Secret value", text: $newSecret)
-                Button("Create Reference") { Task { if await model.createKeychainReference(id: newReferenceID, secret: newSecret) { newReferenceID = ""; newSecret = "" } } }.disabled(newReferenceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newSecret.isEmpty)
+                Button("Create Reference") { Task { if await model.createKeychainReference(id: newReferenceID, secret: newSecret) { newReferenceID = ""; newSecret = "" } } }.disabled(newReferenceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newSecret.isEmpty).accessibilityIdentifier("settings.keychain.create")
                 if !model.allKnownSecretReferenceIDs.isEmpty {
                     Picker("Secret reference label", selection: $selectedReferenceID) { Text("Select…").tag(""); ForEach(model.allKnownSecretReferenceIDs, id: \.self) { Text($0).tag($0) } }
                     if !selectedReferenceID.isEmpty {
@@ -350,7 +354,7 @@ struct SettingsView: View {
                 Button("Reopen Onboarding") { model.resetOnboarding() }
                 Button("Reset Settings to Defaults…", role: .destructive) { confirmsSettingsReset = true }
                 Button("Clear Valid Run History…", role: .destructive) { confirmsHistoryClear = true }
-                Button("Factory Reset by Explicit Scope…", role: .destructive) { factoryResetScope = .init(); confirmsFactoryReset = true }
+                Button("Factory Reset by Explicit Scope…", role: .destructive) { factoryResetScope = .init(); confirmsFactoryReset = true }.accessibilityIdentifier("settings.factoryReset.open")
                 Text("Factory reset presents separate choices for settings, scenes, valid history, Keychain secrets, window layouts, and approvals, followed by a typed confirmation. Corrupt history files remain preserved.").font(.caption).foregroundStyle(.secondary)
             }
             Section { Text("There is no global process-approval bypass. Release updates remain explicit downloads from the official source.").foregroundStyle(.secondary) }

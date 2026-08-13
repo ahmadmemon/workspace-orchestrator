@@ -157,6 +157,11 @@ final class AppModel: ObservableObject {
         if uiTesting {
             if arguments.contains("--reset-onboarding") { UserDefaults.standard.removeObject(forKey: "onboardingCompleted") }
             else { UserDefaults.standard.set(true, forKey: "onboardingCompleted"); onboardingPresented = false }
+            if arguments.contains("--ui-clap-paused") {
+                clapEnabled = true
+                clapState = .paused(.repeatedClipping)
+                clapTestMessage = "Double-clap detection paused: repeated clipping prevents reliable analysis. Resume explicitly after resolving the condition."
+            }
         }
         if !uiTesting { configureGlobalHotKey() }
         Task { await self.historyStore.updateRetention(persistedRetention); await refresh(); await checkForUpdatesIfEnabled() }

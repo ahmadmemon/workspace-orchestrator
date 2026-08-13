@@ -74,7 +74,35 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["sceneEditor.healthCheck.0"].exists)
         XCTAssertTrue(app.buttons["Move Up"].exists)
         XCTAssertTrue(app.buttons["Move Down"].exists)
+        XCTAssertTrue(app.buttons["Argument 1, ⟦empty string⟧"].exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "⟦whitespace:")).firstMatch.exists)
+        let multilineArgument = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "two↵lines")).firstMatch
+        XCTAssertTrue(multilineArgument.exists)
+        multilineArgument.click()
+        let argumentEditor = app.descendants(matching: .any)["sceneEditor.argumentValue"]
+        XCTAssertTrue(argumentEditor.waitForExistence(timeout: 5))
+        XCTAssertEqual(argumentEditor.value as? String, "two\nlines")
         XCTAssertTrue(app.buttons["Copy Structured Preview"].waitForExistence(timeout: 5))
+    }
+
+    func testHistoryFiltersDetailsRetryPreviewAndRedactedExportEntryPoint() throws {
+        let app = launch(["--seed-ui-fixtures"])
+        select("history", in: app)
+
+        XCTAssertTrue(app.descendants(matching: .any)["screen.history"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["history.datePreset"].exists)
+        let run = app.descendants(matching: .any)["history.run.ui-ready-run"]
+        XCTAssertTrue(run.waitForExistence(timeout: 5))
+        run.click()
+
+        XCTAssertTrue(app.descendants(matching: .any)["history.runDetail"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["history.exportDiagnostic"].exists)
+        let retryMenu = app.descendants(matching: .any)["history.retryMenu"]
+        XCTAssertTrue(retryMenu.exists)
+        retryMenu.click()
+        app.menuItems["Retry Full Snapshot"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["history.retryPreview"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Cancel"].exists)
     }
 
     func testSettingsExposePersistedGeneralControls() throws {
@@ -87,7 +115,7 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
     }
 
     func testSettingsExposeGuidedClapCalibrationAndNonexecutingTestControls() throws {
-        let app = launch(["--seed-ui-fixtures", "--ui-show-settings", "--ui-settings-activation"])
+        let app = launch(["--seed-ui-fixtures", "--ui-show-settings", "--ui-settings-activation", "--ui-clap-paused"])
         XCTAssertTrue(app.descendants(matching: .any)["screen.settings"].waitForExistence(timeout: 5))
 
         let startCalibration = app.descendants(matching: .any)["settings.clapCalibration.start"]
@@ -95,6 +123,23 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["settings.clapTest.start"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["Reset Calibration"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["settings.clapPrivacy"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["settings.clapState"].exists)
+        XCTAssertTrue(app.staticTexts["Paused: repeated clipping prevents reliable analysis"].exists)
+    }
+
+    func testSettingsExposeMockKeychainAndScopedFactoryReset() throws {
+        let privacy = launch(["--seed-ui-fixtures", "--ui-show-settings", "--ui-settings-privacy"])
+        XCTAssertTrue(privacy.descendants(matching: .any)["screen.settings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(privacy.descendants(matching: .any)["settings.keychain.create"].waitForExistence(timeout: 5))
+        XCTAssertTrue(privacy.staticTexts["Values are written directly to macOS Keychain and are never displayed, exported, logged, or stored in scene JSON."].exists)
+        privacy.terminate()
+
+        let advanced = launch(["--seed-ui-fixtures", "--ui-show-settings", "--ui-settings-advanced"])
+        XCTAssertTrue(advanced.descendants(matching: .any)["settings.factoryReset.open"].waitForExistence(timeout: 5))
+        advanced.descendants(matching: .any)["settings.factoryReset.open"].click()
+        XCTAssertTrue(advanced.descendants(matching: .any)["settings.factoryResetScope"].waitForExistence(timeout: 5))
+        XCTAssertTrue(advanced.switches["Keychain secrets"].exists)
+        XCTAssertTrue(advanced.buttons["Reset Selected Categories"].exists)
     }
 
     private func launch(_ arguments: [String]) -> XCUIApplication {

@@ -50,7 +50,7 @@ struct RunHistoryView: View {
                 }.frame(width: 210)
                 Picker("Date", selection: $datePreset) {
                     ForEach(RunHistoryDatePreset.allCases, id: \.self) { Text($0.label).tag($0) }
-                }.frame(width: 150)
+                }.frame(width: 150).accessibilityIdentifier("history.datePreset")
             }
             if datePreset == .custom {
                 HStack { DatePicker("From", selection: $customStart, displayedComponents: .date); DatePicker("Through", selection: $customEnd, displayedComponents: .date); Spacer() }
@@ -76,6 +76,7 @@ struct RunHistoryView: View {
                             Image(systemName: "chevron.right").foregroundStyle(ObsidianTokens.mutedText)
                         }.contentShape(Rectangle())
                     }.buttonStyle(.plain).padding(.vertical, compactRows ? 1 : 6).listRowBackground(ObsidianTokens.panel)
+                        .accessibilityIdentifier("history.run.\(run.id)")
                         .contextMenu { Button("Delete Run", role: .destructive) { Task { await model.deleteRun(run) } } }
                 }.scrollContentBackground(.hidden)
             }
@@ -123,14 +124,14 @@ private struct HistoricalRunDetailView: View {
             HStack {
                 VStack(alignment: .leading) { Text(run.sceneName).font(.title.bold()); Text("Historical snapshot • \(run.id)").font(.caption.monospaced()).foregroundStyle(ObsidianTokens.mutedText) }
                 Spacer()
-                Menu("Retry") { Button("Retry Full Snapshot") { retry(.fullSnapshot); dismiss() }; Button("Retry Failed Actions + Dependents") { retry(.failedAndDependents); dismiss() }.disabled(run.failureCount == 0) }
+                Menu("Retry") { Button("Retry Full Snapshot") { retry(.fullSnapshot); dismiss() }; Button("Retry Failed Actions + Dependents") { retry(.failedAndDependents); dismiss() }.disabled(run.failureCount == 0) }.accessibilityIdentifier("history.retryMenu")
                 Button("Open Snapshot as New Scene") { Task { await model.saveHistoricalSceneCopy(from: run); dismiss() } }.disabled(run.sceneSnapshot == nil)
-                Button("Export Diagnostic") { export() }
+                Button("Export Diagnostic") { export() }.accessibilityIdentifier("history.exportDiagnostic")
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding()
             Divider()
             RunDetailView(run: run, cancel: {})
-        }
+        }.accessibilityIdentifier("history.runDetail")
     }
 }
 
@@ -153,7 +154,7 @@ private struct HistoricalRetryPreviewView: View {
                 VStack(alignment: .leading, spacing: 6) { Label("Current preflight", systemImage: "exclamationmark.triangle.fill").font(.headline).foregroundStyle(ObsidianTokens.warning); ForEach(preview.warnings, id: \.self) { Text("• \($0)") } }.obsidianPanel()
             }
             HStack { Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Run Reviewed Snapshot") { model.runHistoricalPreview(preview); dismiss() }.buttonStyle(.borderedProminent).disabled(!preview.blockingIssues.isEmpty || model.isRunning) }
-        }.padding(24).frame(minWidth: 760, minHeight: 600)
+        }.padding(24).frame(minWidth: 760, minHeight: 600).accessibilityIdentifier("history.retryPreview")
     }
 }
 
