@@ -23,6 +23,7 @@
 - Added local activation by global shortcut, opt-in double clap, and explicit on-device voice command sessions, plus spoken status, notifications, launch at login, an overlay, and transparent permission controls.
 - Completed the native Obsidian Command Center foundation: onboarding, menu bar, Workspace Core, dashboard, scene library/builder, current-run details, searchable/status-filtered history, capture, integrations, permissions, settings tabs, diagnostics, command palette, import review, approval flows, and an original icon.
 - Added release-candidate CI/release workflows, security and version gates, universal packaging, checksums, dependency inventory, SPDX SBOM, source provenance, and comprehensive user/developer/release documentation.
+- Added a plain-language new-user navigation guide covering the menu bar, main sidebar, toolbar, Scene Builder, run lifecycle, capture/history flows, Settings tabs, and a minimal beginner path through the app.
 - Expanded automated coverage from the 28-test baseline to 133 Swift package tests plus 9 deterministic XCUITests. The latest verification record below is authoritative.
 
 ## Remaining release gates

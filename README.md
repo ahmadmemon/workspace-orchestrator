@@ -2,7 +2,7 @@
 
 Workspace Orchestrator is a local-first native macOS application that restores saved workspaces as explicit, observable scenes. The V1 release candidate combines structured orchestration, developer-tool integrations, reviewed window capture, and opt-in local activation without accounts, telemetry, or cloud execution.
 
-> Status: `1.0.0-rc.1` has passed local package and app-build verification. Developer ID signing, notarization, hosted CI, and human visual/permission testing remain release gates.
+> Status: `1.0.0-rc.1` has passed local and hosted CI verification. Developer ID signing, notarization, and human visual/permission testing remain release gates.
 
 ## V1 capabilities
 
@@ -18,7 +18,7 @@ Workspace Orchestrator is a local-first native macOS application that restores s
 - Guided local double-clap calibration and a nonexecuting detector test trace with exact pause/recovery reasons
 - No shell command strings, privilege escalation, accounts, analytics, cloud dependency, or embedded secrets
 
-See the [V1 scope](docs/V1_SCOPE.md), [quick start](docs/QUICK_START.md), and [user guide](docs/USER_GUIDE.md).
+New to the app? Start with the [simple app guide](docs/APP_NAVIGATION_GUIDE.md). Then see the [quick start](docs/QUICK_START.md), full [user guide](docs/USER_GUIDE.md), and [V1 scope](docs/V1_SCOPE.md).
 
 ## Architecture
 

@@ -1,5 +1,7 @@
 # User Guide
 
+For a shorter, task-oriented introduction, begin with the [Simple App Guide](APP_NAVIGATION_GUIDE.md). It explains where every main screen lives and which advanced controls a new user can safely ignore at first.
+
 ## Scenes and actions
 
 A scene is a named, stable-ID workspace with activation actions and optional deactivation actions. Actions may depend on other action IDs. Independent ready actions can run in parallel up to the scene limit; visual list order remains the deterministic tie-breaker.

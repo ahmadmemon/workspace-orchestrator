@@ -1,5 +1,7 @@
 # Quick Start
 
+If the interface is unfamiliar, read the [Simple App Guide](APP_NAVIGATION_GUIDE.md) first for a map of the menu bar, sidebar, toolbar, and Settings tabs.
+
 1. Build and run `WorkspaceOrchestratorApp` from Xcode on macOS 14+, or install a signed/notarized release when one is published.
 2. Open the grid item in the menu bar and choose **Open Dashboard**.
 3. Complete onboarding. Optional permissions and background services may be skipped.
