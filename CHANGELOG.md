@@ -4,10 +4,7 @@ All notable changes follow Keep a Changelog. The project uses Semantic Versionin
 
 ## [Unreleased]
 
-### Added
-
-- Guided local double-clap calibration now combines bounded ambient sampling with one representative double clap, offers adjustable sensitivity/timing recommendations that save only after confirmation, and exposes a nonexecuting diagnostic test trace.
-- Audio reliability now distinguishes permission, hardware, route, interruption, unusable format, sustained noise, repeated clipping, sleep, manual pause, and cooldown states, with bounded safe recovery.
+No changes yet.
 
 ## [1.0.0-rc.1] - 2026-08-12
 
@@ -22,6 +19,10 @@ All notable changes follow Keep a Changelog. The project uses Semantic Versionin
 - Accessibility-gated reviewed window capture/restoration and native integration discovery.
 - Universal release packaging, checksum, dependency inventory, provenance/toolchain records, security/documentation audit, and credential-gated Developer ID notarization workflow.
 - Expanded deterministic test suites across SceneCore, orchestration, macOS adapters, integrations, activation, migration, security, health, and recovery.
+- Snapshot-backed History with local date/status/scene filters, full action details, current-preflight retry previews, scene-copy recovery, configurable retention, and bounded redacted diagnostic export.
+- Complete persisted Settings behavior, non-revealing Keychain reference management, allow-listed transfer, and typed scope-by-scope factory reset.
+- Guided local double-clap calibration with explicit accept/adjust persistence, a nonexecuting diagnostic trace, exact operational pause reasons, and bounded safe recovery.
+- Advanced authoring for all implemented conditions and health checks plus lossless structured arguments, including empty, whitespace-only, tab, and multiline values.
 
 ### Security
 

@@ -3,11 +3,11 @@
 - **Project name:** Workspace Orchestrator
 - **Current milestone:** V1 Release Candidate — final local completion and publication pass in progress
 - **Current branch:** `feat/v1-release-candidate`
-- **Overall project completion estimate:** 97%
+- **Overall project completion estimate:** 98%
 - **Release candidate version:** `1.0.0-rc.1` (build `1`)
 - **Product status:** Unsigned, unnotarized V1 release candidate
 - **GitHub repository:** https://github.com/ahmadmemon/workspace-orchestrator
-- **Publication status:** Branch push, pull request creation, and hosted CI verification are blocked by an invalid local GitHub CLI token.
+- **Publication status:** Local completion is in progress; GitHub authentication, push, pull-request creation, issue updates, and hosted CI are rechecked during the publication step.
 - **Post-V1 boundary:** Hosted collaboration, commercial/team features, and a cloud backend remain explicitly out of scope.
 
 ## Completed work
@@ -23,12 +23,12 @@
 - Added local activation by global shortcut, opt-in double clap, and explicit on-device voice command sessions, plus spoken status, notifications, launch at login, an overlay, and transparent permission controls.
 - Completed the native Obsidian Command Center foundation: onboarding, menu bar, Workspace Core, dashboard, scene library/builder, current-run details, searchable/status-filtered history, capture, integrations, permissions, settings tabs, diagnostics, command palette, import review, approval flows, and an original icon.
 - Added release-candidate CI/release workflows, security and version gates, universal packaging, checksums, dependency inventory, SPDX SBOM, source provenance, and comprehensive user/developer/release documentation.
-- Expanded automated coverage from the 28-test baseline to 133 Swift package tests plus 7 deterministic XCUITests. The latest verification record below is authoritative.
+- Expanded automated coverage from the 28-test baseline to 133 Swift package tests plus 9 deterministic XCUITests. The latest verification record below is authoritative.
 
 ## Remaining release gates
 
 - Ahmad must perform the documented visual, keyboard, VoiceOver, permission, real-integration, multi-display, audio, and clean-machine acceptance checklist.
-- GitHub CLI authentication must be repaired before the branch can be pushed, the required unmerged pull request opened, milestone issue checklists updated, and hosted CI inspected.
+- GitHub authentication must be valid before the branch can be pushed, the required unmerged pull request opened, milestone issue checklists updated, and hosted CI inspected.
 - Developer ID credentials and an Apple notarization profile are required to sign, notarize, staple, and publish a distributable release candidate.
 - Maintainer review and acceptance are required before merge; a stable `v1.0.0` tag or public stable release is not authorized yet.
 
@@ -45,7 +45,7 @@
 - `swift build --target SceneCore`: passed
 - `swift build`: passed
 - `swift test`: 133 tests executed, 0 failures, 0 unexpected failures
-- `xcodebuild -quiet -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData-UITests test`: 7 tests executed, 0 failures, 0 unexpected failures
+- UI acceptance: 7 tests previously executed with 0 failures; 9-case source now compiles, with final execution pending an unlocked interactive Mac (a locked session renders the windows but prevents XCTest accessibility attachment)
 - Unsigned arm64 Debug app build: passed
 - Unsigned universal Release app build: passed
 - Release executable architectures: `x86_64 arm64`

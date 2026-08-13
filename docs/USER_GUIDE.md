@@ -32,7 +32,7 @@ Keychain management lists user labels and every saved scene/action/environment r
 
 Capture starts from discoverable running applications, excludes Workspace Orchestrator and known sensitive apps by default, and includes windows only with Accessibility permission. Review and edit the draft before saving; capture never runs it. Imports show schema, duplicate, warning, and risky-action information and remain untrusted. Exported archives omit Keychain secret values and trust grants.
 
-History is local and bounded. Output can contain private data even after redaction, so inspect exported or copied diagnostics before sharing.
+History is local and bounded by the configured age and run-count limits. Filter by scene, terminal status, preset local-calendar ranges, or a custom inclusive date range. Opening a run shows its immutable scene snapshot, action attempts, timing, output excerpts, health checks, errors, and resource ownership. A retry never silently substitutes the current scene: choose the full stored snapshot or failed actions plus their dependents, inspect current validation, integration, approval, and secret-reference preflight, then explicitly run. You can also save the historical snapshot as a new editable scene. Per-run deletion and valid-history clearing leave corrupt files preserved for recovery. Diagnostic export is bounded and redacted, but output can still contain private data; inspect it before sharing.
 
 ## Recovery and errors
 

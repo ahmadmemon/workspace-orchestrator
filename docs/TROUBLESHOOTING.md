@@ -24,6 +24,14 @@ Confirm the feature is enabled, permission is granted, and read the exact detect
 
 An interrupted state means the app ended before completion; inspect potentially owned resources and activate/deactivate deliberately. Degraded means an explicitly nonrequired action/check failed. Cancellation stops tracked work, but independently spawned child processes may require manual cleanup.
 
+## Historical retry is blocked
+
+A stored run is evidence, not an approval. Open its retry preview and resolve every current validation, integration, process-approval, or Keychain-reference issue. If the old snapshot is no longer appropriate, save it as a new scene and edit that copy. Missing or corrupt snapshots are preserved and cannot be executed.
+
+## Keychain reference is missing
+
+Settings shows labels and scene/action usages but never values. Repair or replace the same label to preserve scene references, or rename it to rewrite known saved-scene references. Deletion leaves references visible for later repair and requires confirmation when scenes are affected.
+
 ## Persistence error
 
 Do not overwrite the file. Corrupt data is deliberately preserved under `~/Library/Application Support/WorkspaceOrchestrator`; copy it before recovery. Diagnostics may reveal the affected filename but can contain private paths.
@@ -31,3 +39,5 @@ Do not overwrite the file. Corrupt data is deliberately preserved under `~/Libra
 ## Build problems
 
 Use macOS 14+, Xcode 15.4+, and a Swift 5.10-compatible toolchain. If SwiftPM reports an ABI/cache crash after changing public models, run `swift package clean` and rebuild. This removes derived package products, not source or user data.
+
+macOS UI tests require an unlocked interactive desktop. A locked Mac may still show launched app windows in system window records while XCTest cannot attach to the SwiftUI accessibility hierarchy.

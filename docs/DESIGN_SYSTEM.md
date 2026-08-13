@@ -14,5 +14,6 @@ The visual direction is **Obsidian Command Center with Apple-native interaction*
 - Activation audio/voice always has a non-audio global-shortcut/menu alternative.
 - Guided clap calibration and test mode expose every phase and rejection as text, include explicit Stop/Cancel/Reset actions, and never rely on waveform color or sound alone.
 - Scene Builder collection editors provide labeled Add/Remove and Move Up/Move Down controls in addition to list selection. Exact argument boundaries use numbered rows plus explicit empty/whitespace labels, and advanced readiness sections pair editable fields with a plain-language summary and inline validation output.
+- History filters, stored runs, retry menus/previews, diagnostic export, Keychain creation, factory-reset scope, and detector state expose stable accessibility identifiers for deterministic keyboard/assistive-technology acceptance tests.
 
 The generated app-icon master is `docs/assets/AppIcon-master.png`; raster sizes and asset metadata live in the Xcode asset catalog. Human review at 1x/2x, light/dark desktop backgrounds, and all supported accessibility settings remains part of the smoke checklist.

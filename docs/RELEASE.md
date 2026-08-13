@@ -43,4 +43,4 @@ For a notarized release, verify the checksum, move the app to `/Applications`, o
 
 ## Update strategy
 
-RC1 checks no server and has no automatic updater. Users explicitly download releases from the official GitHub repository and review notes/checksum/signature. Any future updater requires a separate threat/privacy design, signed metadata, rollback, and opt-in behavior.
+RC1 has no automatic downloader or installer. When the user enables launch-time checks or presses **Check for Updates Now**, it requests only the latest release tag from the official GitHub Releases API and reports availability; it sends no workspace data and never installs software. Users explicitly download releases from the official repository and review notes, checksum, and signature. Any future automatic updater requires a separate threat/privacy design, signed metadata, rollback, and opt-in behavior.

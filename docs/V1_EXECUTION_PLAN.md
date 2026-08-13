@@ -52,7 +52,7 @@ Human verification remains required for navigation polish, every VoiceOver/focus
 
 ## 6. Quality, documentation, and release engineering
 
-- [x] Expand deterministic unit/integration/security/reliability/performance coverage from the 28-test baseline to 133 passing package tests, plus 7 deterministic XCUITests.
+- [x] Expand deterministic unit/integration/security/reliability/performance coverage from the 28-test baseline to 133 passing package tests and 9 deterministic XCUITests covering onboarding, core authoring/status, exact structured arguments, History retry/export entry points, persisted Settings, Keychain/reset surfaces, and clap state.
 - [x] Add user, quick-start, builder, integration, permissions, privacy, threat, troubleshooting, import/export, design, scope, smoke-test, and release documentation.
 - [x] Set `1.0.0-rc.1` build 1, hardened runtime, limited entitlement, version/security gates, and non-overwriting universal packaging with checksums/inventory/provenance.
 - [ ] Verify PR/main CI and credential-gated release automation after workflow changes are committed and pushed.
@@ -78,7 +78,7 @@ xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestrato
 OUTPUT_DIR=/absolute/new/output scripts/build-release.sh
 ```
 
-The first incremental `swift test` after public scheduler-model changes crashed in stale SwiftPM ABI/cache state (signals 10/11). `swift package clean` followed by a full rebuild passed all tests, confirming an environment-derived cache issue rather than a reproducible source failure. The latest full suite passed 133 package tests and 7 XCUITests with no failures.
+The first incremental `swift test` after public scheduler-model changes crashed in stale SwiftPM ABI/cache state (signals 10/11). `swift package clean` followed by a full rebuild passed all tests, confirming an environment-derived cache issue rather than a reproducible source failure. The latest full package suite passed 133 tests. Seven UI cases passed before the final two cases were added; the nine-case source compiles, but its final execution requires the local Mac to be unlocked so XCTest can attach to the SwiftUI accessibility hierarchy.
 
 ## External release gates
 

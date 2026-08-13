@@ -2,7 +2,7 @@
 
 Workspace Orchestrator is a local-first native macOS application that restores saved workspaces as explicit, observable scenes. The V1 release candidate combines structured orchestration, developer-tool integrations, reviewed window capture, and opt-in local activation without accounts, telemetry, or cloud execution.
 
-> Status: `1.0.0-rc.1` is under automated verification. Developer ID signing, notarization, and human visual/permission testing remain external release gates.
+> Status: `1.0.0-rc.1` has passed local package and app-build verification. Developer ID signing, notarization, hosted CI, and human visual/permission testing remain release gates.
 
 ## V1 capabilities
 
@@ -13,6 +13,9 @@ Workspace Orchestrator is a local-first native macOS application that restores s
 - Explicit process approval bound to executable, arguments, working directory, and environment references
 - Optional global shortcut, local double-clap, on-device voice commands, spoken status, notifications, and launch-at-login services
 - Accessibility-gated reviewed window capture and restoration
+- Snapshot-backed searchable history with local-date filters, current-preflight retry previews, scene-copy recovery, retention controls, and redacted diagnostic export
+- Persistent settings with non-revealing Keychain reference management, allow-listed settings transfer, and typed scope-by-scope factory reset
+- Guided local double-clap calibration and a nonexecuting detector test trace with exact pause/recovery reasons
 - No shell command strings, privilege escalation, accounts, analytics, cloud dependency, or embedded secrets
 
 See the [V1 scope](docs/V1_SCOPE.md), [quick start](docs/QUICK_START.md), and [user guide](docs/USER_GUIDE.md).
@@ -53,6 +56,12 @@ Release verification and packaging:
 scripts/security-audit.sh
 scripts/verify-version.sh
 scripts/build-release.sh
+```
+
+The deterministic macOS UI suite is run separately with Xcode on an unlocked desktop:
+
+```bash
+xcodebuild -project WorkspaceOrchestrator.xcodeproj -scheme WorkspaceOrchestratorApp -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/XcodeDerivedData test
 ```
 
 The release script refuses to overwrite an existing output directory, tests first, archives a universal `arm64`/`x86_64` app, and emits a ZIP, checksum, dependency inventory, source revision, and toolchain record. Signing and notarization run only when the documented credentials are configured.

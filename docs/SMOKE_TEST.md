@@ -45,3 +45,5 @@ Record macOS version, hardware architecture, display arrangement, app revision, 
 - [ ] Verify universal architectures, hardened runtime, entitlements, signature, notarization, stapling, checksum, inventory, revision, and toolchain files
 
 Any unchecked item blocks stable V1. Attach screenshots/log excerpts only after removing private data.
+
+Run automated macOS UI acceptance on an unlocked interactive desktop. A locked session is not a valid UI-test result because XCTest cannot attach to the app accessibility hierarchy even when its windows render.
