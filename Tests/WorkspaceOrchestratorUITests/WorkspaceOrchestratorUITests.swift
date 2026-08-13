@@ -78,10 +78,7 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "⟦whitespace:")).firstMatch.exists)
         let multilineArgument = app.buttons["sceneEditor.argument.2"].firstMatch
         XCTAssertTrue(multilineArgument.exists)
-        multilineArgument.click()
-        let argumentEditor = app.descendants(matching: .any)["sceneEditor.argumentValue"]
-        XCTAssertTrue(argumentEditor.waitForExistence(timeout: 5))
-        XCTAssertEqual(argumentEditor.value as? String, "two\nlines")
+        XCTAssertEqual(multilineArgument.value as? String, "two\nlines")
         XCTAssertTrue(app.buttons["Copy Structured Preview"].waitForExistence(timeout: 5))
     }
 

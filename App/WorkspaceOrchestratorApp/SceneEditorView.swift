@@ -205,6 +205,7 @@ private struct StructuredArgumentEditor: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Argument \(index + 1), \(argumentLabel(arguments[index]))")
+                .accessibilityValue(arguments[index])
                 .accessibilityIdentifier("sceneEditor.argument.\(index)")
                 Divider()
             }
