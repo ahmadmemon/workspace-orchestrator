@@ -184,7 +184,7 @@ private struct StructuredArgumentEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Structured Arguments").font(.headline)
+                Text("Structured Arguments").font(.headline).accessibilityIdentifier("sceneEditor.structuredArguments")
                 Spacer()
                 Button("Add Argument", systemImage: "plus") { arguments.append(""); selectedIndex = arguments.count - 1 }
                 Button("Remove", role: .destructive) { removeSelected() }.disabled(validSelection == nil)
@@ -205,6 +205,7 @@ private struct StructuredArgumentEditor: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Argument \(index + 1), \(argumentLabel(arguments[index]))")
+                .accessibilityIdentifier("sceneEditor.argument.\(index)")
                 Divider()
             }
             if let index = validSelection {
@@ -223,7 +224,6 @@ private struct StructuredArgumentEditor: View {
             }
         }
         .padding(.vertical, 5)
-        .accessibilityIdentifier("sceneEditor.structuredArguments")
         .onChange(of: arguments.count) { _, count in if let selectedIndex, selectedIndex >= count { self.selectedIndex = count > 0 ? count - 1 : nil } }
     }
 

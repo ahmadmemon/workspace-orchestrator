@@ -28,7 +28,7 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
     func testSceneCreationValidationAndActionEditing() throws {
         let app = launch(["--seed-ui-fixtures"])
         XCTAssertTrue(app.descendants(matching: .any)["screen.dashboard"].waitForExistence(timeout: 5))
-        app.buttons["New Scene"].click()
+        app.descendants(matching: .any)["toolbar.newScene"].firstMatch.click()
 
         let name = app.textFields.firstMatch
         XCTAssertTrue(name.waitForExistence(timeout: 5))
@@ -76,7 +76,7 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Move Down"].exists)
         XCTAssertTrue(app.buttons["Argument 1, ⟦empty string⟧"].exists)
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "⟦whitespace:")).firstMatch.exists)
-        let multilineArgument = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "two↵lines")).firstMatch
+        let multilineArgument = app.descendants(matching: .any)["sceneEditor.argument.2"].firstMatch
         XCTAssertTrue(multilineArgument.exists)
         multilineArgument.click()
         let argumentEditor = app.descendants(matching: .any)["sceneEditor.argumentValue"]
@@ -90,7 +90,7 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
         select("history", in: app)
 
         XCTAssertTrue(app.descendants(matching: .any)["screen.history"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["history.datePreset"].exists)
+        XCTAssertTrue(app.popUpButtons["History date"].exists)
         let run = app.descendants(matching: .any)["history.run.ui-ready-run"]
         XCTAssertTrue(run.waitForExistence(timeout: 5))
         run.click()
@@ -138,7 +138,7 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
         XCTAssertTrue(advanced.descendants(matching: .any)["settings.factoryReset.open"].waitForExistence(timeout: 5))
         advanced.descendants(matching: .any)["settings.factoryReset.open"].click()
         XCTAssertTrue(advanced.descendants(matching: .any)["settings.factoryResetScope"].waitForExistence(timeout: 5))
-        XCTAssertTrue(advanced.switches["Keychain secrets"].exists)
+        XCTAssertTrue(advanced.descendants(matching: .any)["settings.factoryReset.keychain"].exists)
         XCTAssertTrue(advanced.buttons["Reset Selected Categories"].exists)
     }
 

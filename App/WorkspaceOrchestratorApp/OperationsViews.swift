@@ -50,7 +50,7 @@ struct RunHistoryView: View {
                 }.frame(width: 210)
                 Picker("Date", selection: $datePreset) {
                     ForEach(RunHistoryDatePreset.allCases, id: \.self) { Text($0.label).tag($0) }
-                }.frame(width: 150).accessibilityIdentifier("history.datePreset")
+                }.frame(width: 150).accessibilityLabel("History date")
             }
             if datePreset == .custom {
                 HStack { DatePicker("From", selection: $customStart, displayedComponents: .date); DatePicker("Through", selection: $customEnd, displayedComponents: .date); Spacer() }
@@ -122,7 +122,7 @@ private struct HistoricalRunDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                VStack(alignment: .leading) { Text(run.sceneName).font(.title.bold()); Text("Historical snapshot • \(run.id)").font(.caption.monospaced()).foregroundStyle(ObsidianTokens.mutedText) }
+                VStack(alignment: .leading) { Text(run.sceneName).font(.title.bold()); Text("Historical snapshot • \(run.id)").font(.caption.monospaced()).foregroundStyle(ObsidianTokens.mutedText).accessibilityIdentifier("history.runDetail") }
                 Spacer()
                 Menu("Retry") { Button("Retry Full Snapshot") { retry(.fullSnapshot); dismiss() }; Button("Retry Failed Actions + Dependents") { retry(.failedAndDependents); dismiss() }.disabled(run.failureCount == 0) }.accessibilityIdentifier("history.retryMenu")
                 Button("Open Snapshot as New Scene") { Task { await model.saveHistoricalSceneCopy(from: run); dismiss() } }.disabled(run.sceneSnapshot == nil)
@@ -131,7 +131,7 @@ private struct HistoricalRunDetailView: View {
             }.padding()
             Divider()
             RunDetailView(run: run, cancel: {})
-        }.accessibilityIdentifier("history.runDetail")
+        }
     }
 }
 
@@ -141,7 +141,7 @@ private struct HistoricalRetryPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Historical Retry Preview").font(.largeTitle.bold())
+            Text("Historical Retry Preview").font(.largeTitle.bold()).accessibilityIdentifier("history.retryPreview")
             Text(preview.plan.scope == .fullSnapshot ? "Full historical snapshot" : "Failed actions and their dependents").foregroundStyle(ObsidianTokens.secondaryText)
             Text("The following actions will execute in this exact order:").font(.headline)
             List(Array(preview.plan.scene.actions.enumerated()), id: \.element.id) { index, action in
@@ -154,7 +154,7 @@ private struct HistoricalRetryPreviewView: View {
                 VStack(alignment: .leading, spacing: 6) { Label("Current preflight", systemImage: "exclamationmark.triangle.fill").font(.headline).foregroundStyle(ObsidianTokens.warning); ForEach(preview.warnings, id: \.self) { Text("• \($0)") } }.obsidianPanel()
             }
             HStack { Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Run Reviewed Snapshot") { model.runHistoricalPreview(preview); dismiss() }.buttonStyle(.borderedProminent).disabled(!preview.blockingIssues.isEmpty || model.isRunning) }
-        }.padding(24).frame(minWidth: 760, minHeight: 600).accessibilityIdentifier("history.retryPreview")
+        }.padding(24).frame(minWidth: 760, minHeight: 600)
     }
 }
 

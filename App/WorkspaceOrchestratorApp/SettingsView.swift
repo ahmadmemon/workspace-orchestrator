@@ -385,14 +385,14 @@ private struct FactoryResetView: View {
 
     var body: some View {
         Form {
-            Section("Choose exact reset scope") {
+            Section {
                 Toggle("Settings and onboarding state", isOn: $scope.settings)
                 Toggle("Valid saved scenes", isOn: $scope.scenes)
                 Toggle("Valid run history", isOn: $scope.history)
-                Toggle("Keychain secrets", isOn: $scope.keychainSecrets)
+                Toggle("Keychain secrets", isOn: $scope.keychainSecrets).accessibilityIdentifier("settings.factoryReset.keychain")
                 Toggle("Window-layout actions only", isOn: $scope.windowLayouts).disabled(scope.scenes)
                 Toggle("Stored process approvals", isOn: $scope.approvals)
-            }
+            } header: { Text("Choose exact reset scope").accessibilityIdentifier("settings.factoryResetScope") }
             Section("Scope preview") {
                 Text(scopeSummary).font(.callout).textSelection(.enabled)
                 if scope.keychainSecrets { Label("Deleting Keychain secrets can break scene environment references until repaired.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
@@ -405,7 +405,6 @@ private struct FactoryResetView: View {
         }
         .formStyle(.grouped)
         .padding(16)
-        .accessibilityIdentifier("settings.factoryResetScope")
     }
 
     private var scopeSummary: String {
