@@ -39,7 +39,7 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["sceneEditor.validation"].waitForExistence(timeout: 5))
 
         name.typeText("Created in UI Test")
-        let addAction = app.menuButtons["Add Action"].firstMatch
+        let addAction = app.descendants(matching: .any)["sceneEditor.addStartAction"].firstMatch
         XCTAssertTrue(addAction.waitForExistence(timeout: 5))
         addAction.click()
         app.menuItems["Wait"].click()
@@ -76,7 +76,7 @@ final class WorkspaceOrchestratorUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Move Down"].exists)
         XCTAssertTrue(app.buttons["Argument 1, ⟦empty string⟧"].exists)
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "⟦whitespace:")).firstMatch.exists)
-        let multilineArgument = app.descendants(matching: .any)["sceneEditor.argument.2"].firstMatch
+        let multilineArgument = app.buttons["sceneEditor.argument.2"].firstMatch
         XCTAssertTrue(multilineArgument.exists)
         multilineArgument.click()
         let argumentEditor = app.descendants(matching: .any)["sceneEditor.argumentValue"]
