@@ -16,12 +16,20 @@ final class ProcessRunnerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(result.duration, 0)
     }
 
-    func testNonZeroExitAndStderrCapture() async throws {
+    func testRestrictedWrapperIsRejected() async throws {
+        do {
+            _ = try await runner.run(.init(executable: "/usr/bin/env", arguments: ["false"], workingDirectory: nil, timeoutSeconds: 2))
+            XCTFail("Expected restricted executable rejection")
+        } catch let error as AutomationError {
+            XCTAssertEqual(error, .restrictedExecutable("/usr/bin/env"))
+        }
+    }
+
+    func testNonZeroExit() async throws {
         let result = try await runner.run(.init(
-            executable: "/usr/bin/env", arguments: ["definitely-not-a-real-executable"], workingDirectory: nil, timeoutSeconds: 2
+            executable: "/usr/bin/false", arguments: [], workingDirectory: nil, timeoutSeconds: 2
         ))
         XCTAssertNotEqual(result.exitCode, 0)
-        XCTAssertFalse(result.stderr.isEmpty)
     }
 
     func testTimeout() async throws {

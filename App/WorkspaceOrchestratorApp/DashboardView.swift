@@ -1,101 +1,111 @@
+import AppKit
 import SceneCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DashboardView: View {
     @ObservedObject var model: AppModel
     @State private var editingScene: SceneCore.Scene?
     @State private var scenePendingDeletion: SceneCore.Scene?
-
+    @State private var importingScenes = false
+    @State private var exportingScenes = false
+    @State private var exportDocument: SceneArchiveDocument?
     var body: some View {
         NavigationSplitView {
-            sceneList
-                .navigationSplitViewColumnWidth(min: 260, ideal: 300)
+            List(selection: $model.selectedSection) {
+                Section("Command Center") { ForEach(AppSection.allCases) { section in Label(section.title, systemImage: section.symbol).accessibilityIdentifier("navigation.\(section.rawValue)").tag(section) } }
+                Section("Favorites") { ForEach(model.favoriteScenes) { scene in Button { model.run(scene) } label: { Label(scene.name, systemImage: scene.iconName ?? "bolt") }.buttonStyle(.plain).disabled(model.isRunning) } }
+            }.navigationSplitViewColumnWidth(min: 210, ideal: 240).scrollContentBackground(.hidden).background(ObsidianTokens.elevated)
         } detail: {
-            if let run = model.currentRun {
-                RunDetailView(run: run, cancel: model.cancelCurrentRun)
-            } else {
-                ContentUnavailableView(
-                    "Ready for a Scene",
-                    systemImage: "square.grid.2x2",
-                    description: Text("Choose Run beside a saved scene. Actions execute in order and stop on the first failure.")
-                )
-            }
+            Group {
+                switch model.selectedSection {
+                case .dashboard: CommandCenterDashboard(model: model)
+                case .scenes: SceneLibraryView(model: model, editingScene: $editingScene, pendingDeletion: $scenePendingDeletion)
+                case .currentRun: if let run = model.currentRun { RunDetailView(run: run, cancel: model.cancelCurrentRun) } else { EmptySection(title: "No Current Run", symbol: "waveform.path.ecg", detail: "Run a scene to see its live execution state.") }
+                case .history: RunHistoryView(model: model)
+                case .capture: WorkspaceCaptureView(model: model)
+                case .integrations: IntegrationsView(model: model)
+                case .permissions: PermissionsView(model: model)
+                case .diagnostics: DiagnosticsView(model: model)
+                }
+            }.background(ObsidianTokens.base).foregroundStyle(ObsidianTokens.primaryText)
         }
         .toolbar {
-            ToolbarItemGroup {
-                Button {
-                    editingScene = Scene(name: "New Scene")
-                } label: {
-                    Label("New Scene", systemImage: "plus")
-                }
-                Button {
-                    Task { await model.installDemoScene() }
-                } label: {
-                    Label("Install Demo Scene", systemImage: "shippingbox")
-                }
-            }
+                ToolbarItemGroup { Button { editingScene = model.makeNewScene() } label: { Label("New Scene", systemImage: "plus") }.accessibilityIdentifier("toolbar.newScene"); Button { importingScenes = true } label: { Label("Import", systemImage: "square.and.arrow.down") }; Button { prepareExport() } label: { Label("Export All", systemImage: "square.and.arrow.up") }.disabled(model.scenes.isEmpty); Button { model.commandPalettePresented = true } label: { Label("Command Palette", systemImage: "command") }.keyboardShortcut(.space, modifiers: [.option, .command]); SettingsLink { Label("Settings", systemImage: "gearshape") }.accessibilityIdentifier("toolbar.settings") }
         }
-        .sheet(item: $editingScene) { scene in
-            SceneEditorView(scene: scene) { saved in
-                if await model.save(saved) { editingScene = nil }
-            }
-            .frame(minWidth: 620, minHeight: 560)
-        }
-        .confirmationDialog(
-            "Delete this scene?",
-            isPresented: Binding(
-                get: { scenePendingDeletion != nil },
-                set: { if !$0 { scenePendingDeletion = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: scenePendingDeletion
-        ) { scene in
-            Button("Delete “\(scene.name)”", role: .destructive) {
-                Task { await model.delete(scene) }
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: { _ in
-            Text("This cannot be undone.")
-        }
-        .alert("Workspace Orchestrator", isPresented: Binding(
-            get: { model.presentedError != nil },
-            set: { if !$0 { model.presentedError = nil } }
-        )) {
-            Button("OK") { model.presentedError = nil }
-        } message: {
-            Text(model.presentedError ?? "Unknown error")
+        .sheet(item: $editingScene) { scene in SceneEditorView(scene: scene, executionDefaults: model.executionDefaults) { saved in if await model.save(saved) { editingScene = nil } }.frame(minWidth: 820, minHeight: 680) }
+        .sheet(isPresented: $model.commandPalettePresented) { CommandPaletteView(model: model).frame(width: 620, height: 460) }
+        .sheet(isPresented: $model.onboardingPresented) { OnboardingView(model: model).interactiveDismissDisabled(false).frame(width: 700, height: 560) }
+        .sheet(item: $model.processApprovalRequest) { request in ProcessApprovalView(model: model, request: request) }
+        .sheet(isPresented: $model.voicePanelPresented) { VoiceCommandView(model: model) }
+        .sheet(item: $model.importReviewRequest) { request in ImportReviewView(model: model, request: request) }
+        .fileImporter(isPresented: $importingScenes, allowedContentTypes: [.workspaceOrchestratorArchive, .json], allowsMultipleSelection: false) { result in if case .success(let urls) = result, let url = urls.first { Task { await model.previewImport(from: url) } } else if case .failure(let error) = result { model.presentedError = error.localizedDescription } }
+        .fileExporter(isPresented: $exportingScenes, document: exportDocument, contentType: .workspaceOrchestratorArchive, defaultFilename: "Workspace-Orchestrator-Scenes.workspaceorchestrator") { result in if case .failure(let error) = result { model.presentedError = error.localizedDescription }; exportDocument = nil }
+        .confirmationDialog("Delete this scene?", isPresented: Binding(get: { scenePendingDeletion != nil }, set: { if !$0 { scenePendingDeletion = nil } }), titleVisibility: .visible, presenting: scenePendingDeletion) { scene in Button("Delete “\(scene.name)”", role: .destructive) { Task { await model.delete(scene) } }; Button("Cancel", role: .cancel) {} } message: { _ in Text("The scene definition will be removed. Historical run snapshots remain until their retention date.") }
+        .confirmationDialog("Run scene from double clap?", isPresented: Binding(get: { model.clapConfirmationScene != nil }, set: { if !$0 { model.clapConfirmationScene = nil } }), titleVisibility: .visible, presenting: model.clapConfirmationScene) { scene in Button("Run \(scene.name)") { model.confirmClapSceneRun() }; Button("Cancel", role: .cancel) { model.clapConfirmationScene = nil } } message: { scene in Text("Double-clap detection selected \(scene.name). Review this confirmation before any scene action executes.") }
+        .alert("Workspace Orchestrator", isPresented: Binding(get: { model.presentedError != nil }, set: { if !$0 { model.presentedError = nil } })) { Button("OK") { model.presentedError = nil } } message: { Text(model.presentedError ?? "Unknown error") }
+        .overlay(alignment: .center) { if model.overlayPresented, let run = model.currentRun { ActivationOverlay(run: run, cancel: model.cancelCurrentRun) { model.overlayPresented = false }.transition(.opacity) } }
+        .task {
+            if UserDefaults.standard.object(forKey: "onboardingCompleted") == nil { model.onboardingPresented = true }
         }
     }
+    private func prepareExport() { do { exportDocument = .init(data: try SceneArchiveService.export(model.scenes, appVersion: model.appVersion)); exportingScenes = true } catch { model.presentedError = error.localizedDescription } }
+}
 
-    private var sceneList: some View {
-        List {
-            Section("Saved Scenes") {
-                if model.isLoading {
-                    ProgressView()
-                } else if model.scenes.isEmpty {
-                    Text("No scenes yet")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(model.scenes) { scene in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(scene.name).font(.headline)
-                        if let description = scene.description, !description.isEmpty {
-                            Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                        }
-                        Text("\(scene.actions.count) action\(scene.actions.count == 1 ? "" : "s")")
-                            .font(.caption2).foregroundStyle(.secondary)
-                        HStack {
-                            Button("Run") { model.run(scene) }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(model.isRunning)
-                            Button("Edit") { editingScene = scene }
-                            Button("Delete", role: .destructive) { scenePendingDeletion = scene }
-                        }
-                        .controlSize(.small)
-                    }
-                    .padding(.vertical, 5)
-                }
+private struct CommandCenterDashboard: View {
+    @ObservedObject var model: AppModel
+    private var run: SceneRunResult? { model.currentRun }
+    private var status: SceneRunStatus { run?.status ?? .idle }
+    private var progress: Double { guard let run, !run.actionRecords.isEmpty else { return 0 }; return Double(run.completedActionCount) / Double(run.actionRecords.count) }
+    var body: some View {
+        ScrollView { VStack(spacing: 24) {
+            if let interrupted = model.interruptedRun { InterruptedRunBanner(model: model, run: interrupted) }
+            HStack(alignment: .center, spacing: 36) {
+                WorkspaceCoreView(status: status, progress: progress)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("WORKSPACE COMMAND").font(.caption.weight(.bold)).tracking(2).foregroundStyle(ObsidianTokens.cyan)
+                    Text(run?.sceneName ?? "Workspace Offline").font(.system(size: 34, weight: .bold, design: .rounded))
+                    StatusBadge(text: status.displayName, color: status.color, symbol: status.symbol)
+                    if let action = run?.currentAction { Text(action.name).foregroundStyle(ObsidianTokens.secondaryText) }
+                    HStack { if model.isRunning { Button("Cancel Run", role: .destructive) { model.cancelCurrentRun() } } else if let scene = model.recentScenes.first { Button("Run \(scene.name)") { model.run(scene) }.buttonStyle(.borderedProminent).tint(ObsidianTokens.activeCyan) } }
+                }; Spacer()
+            }.obsidianPanel()
+            HStack(spacing: 16) { MetricCard(title: "Actions", value: run.map { "\($0.completedActionCount)/\($0.actionRecords.count)" } ?? "—", symbol: "list.bullet.rectangle"); MetricCard(title: "Warnings", value: "\(run?.warningCount ?? 0)", symbol: "exclamationmark.triangle"); MetricCard(title: "Failures", value: "\(run?.failureCount ?? 0)", symbol: "xmark.octagon"); MetricCard(title: "Elapsed", value: run?.duration.map { String(format: "%.1fs", $0) } ?? "—", symbol: "timer") }
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) { Text("Recent Scenes").font(.title3.bold()); if model.recentScenes.isEmpty { Text("Create or install a scene to begin.").foregroundStyle(ObsidianTokens.secondaryText) } else { ForEach(model.recentScenes) { scene in HStack { Image(systemName: scene.iconName ?? "square.grid.2x2").foregroundStyle(ObsidianTokens.cyan); VStack(alignment: .leading) { Text(scene.name).fontWeight(.semibold); Text("\(scene.actions.count) actions").font(.caption).foregroundStyle(ObsidianTokens.mutedText) }; Spacer(); Button("Run") { model.run(scene) }.disabled(model.isRunning) } } } }.obsidianPanel().frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 12) { Text("Recent Runs").font(.title3.bold()); if model.runHistory.isEmpty { Text("Run history is stored locally and redacted.").foregroundStyle(ObsidianTokens.secondaryText) } else { ForEach(model.runHistory.prefix(5)) { run in HStack { Image(systemName: run.status.symbol).foregroundStyle(run.status.color); VStack(alignment: .leading) { Text(run.sceneName); Text(run.status.displayName).font(.caption).foregroundStyle(ObsidianTokens.mutedText) }; Spacer(); Text(run.startedAt?.formatted(date: .omitted, time: .shortened) ?? "") } } } }.obsidianPanel().frame(maxWidth: .infinity)
             }
-        }
+        }.padding(28) }.accessibilityIdentifier("screen.dashboard")
     }
+}
+
+private struct InterruptedRunBanner: View {
+    @ObservedObject var model: AppModel
+    let run: SceneRunResult
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "exclamationmark.arrow.triangle.2.circlepath").font(.title2).foregroundStyle(ObsidianTokens.warning).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Interrupted workspace detected").font(.headline)
+                Text("\(run.sceneName) did not reach a terminal state. Workspace Orchestrator left all resources untouched.").foregroundStyle(ObsidianTokens.secondaryText)
+                Text("Stop Resources follows the explicit ownership policy in Settings; the safe default includes only resources created by this run.").font(.caption).foregroundStyle(ObsidianTokens.mutedText)
+            }
+            Spacer()
+            Button("Dismiss") { model.dismissInterruptedRun() }
+            Button("Stop Resources", role: .destructive) { Task { await model.stopInterruptedResources() } }
+                .disabled(!model.canStopInterruptedResources)
+            Button("Retry Scene") { model.retryInterruptedRun() }.buttonStyle(.borderedProminent)
+        }
+        .obsidianPanel()
+        .accessibilityIdentifier("interruptedRunBanner")
+    }
+}
+
+private struct MetricCard: View { let title: String; let value: String; let symbol: String; var body: some View { VStack(alignment: .leading, spacing: 8) { Image(systemName: symbol).foregroundStyle(ObsidianTokens.cyan); Text(value).font(.title2.monospacedDigit().bold()); Text(title).font(.caption).foregroundStyle(ObsidianTokens.secondaryText) }.frame(maxWidth: .infinity, alignment: .leading).obsidianPanel() } }
+private struct EmptySection: View { let title: String; let symbol: String; let detail: String; var body: some View { ContentUnavailableView(title, systemImage: symbol, description: Text(detail)).frame(maxWidth: .infinity, maxHeight: .infinity) } }
+
+private struct SceneLibraryView: View {
+    @ObservedObject var model: AppModel; @Binding var editingScene: SceneCore.Scene?; @Binding var pendingDeletion: SceneCore.Scene?
+    @AppStorage("compactRows") private var compactRows = false
+    var body: some View { VStack(alignment: .leading, spacing: 16) { HStack { VStack(alignment: .leading) { Text("Scene Library").font(.largeTitle.bold()); Text("Inspectable, local workspace definitions").foregroundStyle(ObsidianTokens.secondaryText) }; Spacer(); Button("Install Demo") { Task { await model.installDemoScene() } } }; if model.scenes.isEmpty { EmptySection(title: "No Scenes", symbol: "rectangle.stack.badge.plus", detail: "Create a blank scene, capture a workspace, or install the inspectable demo.") } else { List(model.scenes) { scene in HStack { Image(systemName: scene.iconName ?? "square.grid.2x2").font(.title2).foregroundStyle(scene.favorite ? ObsidianTokens.warning : ObsidianTokens.cyan).frame(width: 34); VStack(alignment: .leading, spacing: 4) { HStack { Text(scene.name).font(.headline); if scene.trustState == .importedUntrusted { StatusBadge(text: "Untrusted import", color: ObsidianTokens.warning, symbol: "shield.lefthalf.filled") } }; Text(scene.description ?? "No description").foregroundStyle(ObsidianTokens.secondaryText).lineLimit(2); Text("\(scene.actions.count) start • \(scene.deactivationActions.count) stop • concurrency \(scene.maximumConcurrency)").font(.caption.monospaced()).foregroundStyle(ObsidianTokens.mutedText) }; Spacer(); Button("Run") { model.run(scene) }.buttonStyle(.borderedProminent).disabled(model.isRunning || scene.trustState == .importedUntrusted); Button("Edit") { editingScene = scene }; Button(role: .destructive) { pendingDeletion = scene } label: { Image(systemName: "trash") } }.padding(.vertical, compactRows ? 2 : 7).listRowBackground(ObsidianTokens.panel) }.scrollContentBackground(.hidden) } }.padding(28).accessibilityIdentifier("screen.scenes") }
 }

@@ -9,11 +9,11 @@ final class SceneExecutorTests: XCTestCase {
         let app = MockApplicationOpener(events: events)
         let url = MockURLOpener(events: events)
         let process = MockProcessRunner(events: events)
-        let executor = SceneExecutor(applicationOpener: app, urlOpener: url, processRunner: process)
+        let executor = SceneExecutor(applicationOpener: app, urlOpener: url, processRunner: process, approvalAuthorizer: AllowAllApprovals())
 
         let result = await executor.execute(scene: TestScene.valid)
 
-        XCTAssertEqual(result.status, .succeeded)
+        XCTAssertEqual(result.status, .ready)
         XCTAssertEqual(result.actionRecords.map(\.status), [.succeeded, .succeeded, .succeeded])
         let recordedEvents = await events.values
         let recordedBundleIdentifiers = await app.bundleIdentifiers
@@ -28,14 +28,15 @@ final class SceneExecutorTests: XCTestCase {
         let executor = SceneExecutor(
             applicationOpener: MockApplicationOpener(events: events, error: TestError.failed),
             urlOpener: MockURLOpener(events: events),
-            processRunner: MockProcessRunner(events: events)
+            processRunner: MockProcessRunner(events: events),
+            approvalAuthorizer: AllowAllApprovals()
         )
 
         let result = await executor.execute(scene: TestScene.valid)
 
         XCTAssertEqual(result.status, .failed)
         XCTAssertEqual(result.failedActionID, "app")
-        XCTAssertEqual(result.actionRecords.map(\.status), [.failed, .pending, .pending])
+        XCTAssertEqual(result.actionRecords.map(\.status), [.failed, .skipped, .skipped])
         XCTAssertTrue(result.errorMessage?.contains("mock failure") == true)
         let recordedEvents = await events.values
         XCTAssertEqual(recordedEvents, ["app:com.apple.TextEdit"])
@@ -45,7 +46,8 @@ final class SceneExecutorTests: XCTestCase {
         let executor = SceneExecutor(
             applicationOpener: MockApplicationOpener(events: EventRecorder()),
             urlOpener: MockURLOpener(events: EventRecorder()),
-            processRunner: MockProcessRunner(events: EventRecorder(), exitCode: 7)
+            processRunner: MockProcessRunner(events: EventRecorder(), exitCode: 7),
+            approvalAuthorizer: AllowAllApprovals()
         )
         var scene = TestScene.valid
         scene.actions = [.runProcess(.init(id: "process", executable: "/usr/bin/false"))]
@@ -59,7 +61,8 @@ final class SceneExecutorTests: XCTestCase {
         let executor = SceneExecutor(
             applicationOpener: MockApplicationOpener(events: EventRecorder()),
             urlOpener: MockURLOpener(events: EventRecorder()),
-            processRunner: CancellingProcessRunner()
+            processRunner: CancellingProcessRunner(),
+            approvalAuthorizer: AllowAllApprovals()
         )
         let scene = Scene(
             id: TestScene.valid.id,
@@ -72,6 +75,37 @@ final class SceneExecutorTests: XCTestCase {
         let result = await task.value
         XCTAssertEqual(result.status, .cancelled)
         XCTAssertEqual(result.actionRecords.first?.status, .cancelled)
+    }
+
+    func testUnapprovedProcessIsRejectedBeforeLaunch() async {
+        let events = EventRecorder()
+        let executor = SceneExecutor(
+            applicationOpener: MockApplicationOpener(events: events),
+            urlOpener: MockURLOpener(events: events),
+            processRunner: MockProcessRunner(events: events)
+        )
+        let scene = Scene(name: "Approval", actions: [.runProcess(.init(id: "process", executable: "/usr/bin/printf", arguments: ["safe"]))])
+
+        let result = await executor.execute(scene: scene)
+
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertEqual(result.errorCategory, .securityApproval)
+        XCTAssertTrue(result.errorMessage?.contains("not been approved") == true)
+        let recordedEvents = await events.values
+        XCTAssertTrue(recordedEvents.isEmpty)
+    }
+
+    func testProcessArgumentsRemainAnExactStructuredArray() async {
+        let runner = MockProcessRunner(events: EventRecorder())
+        let arguments = ["", "   ", "two\nlines", "--literal=$VALUE"]
+        let scene = Scene(name: "Structured arguments", actions: [.runProcess(.init(id: "process", executable: "/usr/bin/printf", arguments: arguments))])
+        let executor = SceneExecutor(applicationOpener: MockApplicationOpener(events: EventRecorder()), urlOpener: MockURLOpener(events: EventRecorder()), processRunner: runner, approvalAuthorizer: AllowAllApprovals())
+
+        let result = await executor.execute(scene: scene)
+
+        let requests = await runner.requests
+        XCTAssertEqual(result.status, .ready)
+        XCTAssertEqual(requests.first?.arguments, arguments)
     }
 }
 
@@ -107,8 +141,10 @@ private actor MockURLOpener: URLOpening {
 private actor MockProcessRunner: ProcessRunning {
     let events: EventRecorder
     let exitCode: Int32
+    private(set) var requests: [ProcessRequest] = []
     init(events: EventRecorder, exitCode: Int32 = 0) { self.events = events; self.exitCode = exitCode }
     func run(_ request: ProcessRequest) async throws -> ProcessExecutionResult {
+        requests.append(request)
         await events.record("process:\(request.executable)")
         return .init(stdout: "", stderr: "", exitCode: exitCode, startedAt: Date(), endedAt: Date(), timedOut: false, cancelled: false)
     }
@@ -121,6 +157,13 @@ private struct CancellingProcessRunner: ProcessRunning {
     }
 }
 
+private struct AllowAllApprovals: ProcessApprovalAuthorizing {
+    func isApproved(_ action: SceneAction) async throws -> Bool { true }
+    func approve(_ action: SceneAction, scope: ProcessApprovalScope) async throws {}
+    func consumeApproval(for action: SceneAction) async throws -> Bool { true }
+    func revoke(actionID: String) async throws {}
+}
+
 private enum TestScene {
     static let valid = Scene(
         id: "scene",
@@ -129,6 +172,7 @@ private enum TestScene {
             .openApplication(.init(id: "app", bundleIdentifier: "com.apple.TextEdit")),
             .openURL(.init(id: "url", url: "https://example.com")),
             .runProcess(.init(id: "process", executable: "/usr/bin/printf", arguments: ["done"]))
-        ]
+        ],
+        maximumConcurrency: 1
     )
 }

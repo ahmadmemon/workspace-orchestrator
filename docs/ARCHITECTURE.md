@@ -1,54 +1,56 @@
 # Architecture
 
-## Components and boundaries
+## Module boundaries
 
-`SceneCore` owns platform-independent data and rules. `MacAutomation` owns operating-system side effects and execution policy. `WorkspaceOrchestratorApp` owns presentation and coordinates dependencies. SceneCore imports Foundation only; it never imports SwiftUI or AppKit. UI views never launch applications, open URLs, or create processes.
+Workspace Orchestrator is a local native macOS application split into five Swift packages and one presentation target. Dependencies point inward toward `SceneCore`; platform side effects remain protocol-backed.
 
 ```mermaid
-flowchart LR
-    UI["WorkspaceOrchestratorApp\nSwiftUI menu bar, dashboard, editor"] --> CORE["SceneCore\nmodels, validation, run state, JSON store"]
-    UI --> AUTO["MacAutomation\nSceneExecutor and adapters"]
-    AUTO --> CORE
-    AUTO --> NS["NSWorkspace"]
-    AUTO --> FP["Foundation Process"]
-    CORE --> FS["Application Support JSON"]
+flowchart TD
+  App["WorkspaceOrchestratorApp\nSwiftUI state and views"] --> Core["SceneCore\nschema, validation, persistence, history, security"]
+  App --> Activation["ActivationKit\nhotkey, audio features, speech parsing, spoken status"]
+  App --> Integrations["WorkspaceIntegrations\ntyped tool discovery and command construction"]
+  Integrations --> Automation["MacAutomation\nmacOS adapters and action execution"]
+  Automation --> Engine["OrchestrationEngine\nDAG scheduler and policies"]
+  Engine --> Core
+  Automation --> Core
+  Integrations --> Core
+  Activation --> Core
 ```
 
-## Main types
+- `SceneCore` imports Foundation only. It owns stable Codable schemas, validation, V1-to-V2 migration, archives, run state/history, process approvals, and redaction.
+- `OrchestrationEngine` is platform-neutral. It schedules a validated DAG deterministically with bounded parallelism, dependencies, conditions, retries, health checks, failure policies, cancellation, and deactivation.
+- `MacAutomation` owns Foundation/AppKit/ApplicationServices/Network/Security/ServiceManagement/UserNotifications effects. Application, URL, file, process, health, Keychain, window, login, notification, and update-check effects sit behind mockable protocols.
+- `WorkspaceIntegrations` discovers supported local tools and translates typed scene actions into executable-plus-argument requests. It never accepts a shell string.
+- `ActivationKit` isolates Carbon hotkeys, AVFoundation audio features, Speech parsing, and synthesised status. Services are opt-in and local.
+- `WorkspaceOrchestratorApp` owns `@MainActor` observable state, navigation, presentation, confirmation, and permission prompts. Views do not instantiate `Process` or call `NSWorkspace`.
 
-- `Scene`, `SceneAction`, and the three action payloads form schema version 1.
-- `SceneValidator` returns path-specific issues and fails closed.
-- `JSONSceneStore` is an actor implementing `SceneStoring` with atomic collection writes.
-- `ActionExecutionRecord`, `ProcessExecutionResult`, and `SceneRunResult` preserve observable state.
-- `ApplicationOpening`, `URLOpening`, and `ProcessRunning` are dependency-injection seams.
-- `FoundationProcessRunner` directly executes an absolute path and captures both pipes.
-- `SceneExecutor` validates, runs actions sequentially, stops after failure, and observes task cancellation.
-- `AppModel` is `@MainActor` state that connects UI intents to the store and executor.
+## Data and execution flow
 
-## Data flow
+Scenes are decoded as untrusted input, migrated if they are V1, validated, and persisted atomically under Application Support. Corrupt data is preserved and the error is surfaced. Import first produces a review preview; imported scenes remain untrusted until explicitly saved.
 
-The editor modifies an in-memory `Scene`. Save validates it, asks `JSONSceneStore` to update the collection, and reloads sorted scenes. Run validates again, creates pending action records, and sends immutable result snapshots to `AppModel`. The dashboard renders those snapshots; adapters never know about SwiftUI.
+Activation validates the scene again. Process-bearing actions pass an exact fingerprint approval gate. The orchestration engine schedules ready actions by stable scene order, capped by `maximumParallelism`. Each action records attempts, health checks, owned resources, timestamps, output according to retention policy, and a typed user-facing failure. Required dependency failure skips downstream work; optional/continue policies remain visible. Cancellation propagates to active tasks and managed resources owned by the run.
 
-## Scene execution lifecycle
+Live snapshots and completed run records are written separately from scene definitions. An interrupted snapshot is detected at launch and presented as recovery information; it is not silently resumed. Run retention is bounded by count and age, and writes are atomic.
 
-1. Create an idle result with all actions pending.
-2. Validate untrusted scene data; validation failure ends as failed before side effects.
-3. Mark the scene running and each action running in configured order.
-4. Call exactly one injected adapter and record timing or process output.
-5. Mark success and continue, or preserve the error and leave later actions pending.
-6. A cancelled task terminates the active process where applicable and finishes cancelled.
-7. All-actions success finishes the scene succeeded.
+## Security architecture
 
-The sequential loop is intentionally small enough to later host an execution strategy abstraction for dependencies, retries, or parallelism without changing action schemas prematurely.
+- Commands are an absolute executable plus `[String]` arguments and typed environment values.
+- Restricted executables and shell wrappers are rejected in validation and execution.
+- Exact process approvals bind executable, the exact argument array, working directory, environment names/value kinds/configuration, Keychain reference identifiers, retry/timeout policy, and managed stop behavior; one-time approvals are consumed. Keychain secret values are neither shown nor included in fingerprints.
+- Secret environment values are Keychain references. Plain secret values are not serialized.
+- HTTP checks use normal platform TLS validation. TCP and all polling checks have explicit timeouts and bounded intervals.
+- Window control is isolated behind Accessibility permission and uses reviewed normalized placement data.
+- Clap and speech services start only after explicit enablement and expose their active state.
+- No telemetry, account, remote control, arbitrary plug-in loading, or self-update code is present in V1. The optional launch-time update check reads only the latest tag from the official GitHub Releases API; it sends no workspace data and never downloads or installs a release.
 
-## Persistence architecture
+## Concurrency and recovery
 
-`JSONSceneStore` writes `scenes.json` under `~/Library/Application Support/WorkspaceOrchestrator`. It creates a missing directory, returns an empty collection when no file exists, validates every decoded scene, performs atomic writes, and surfaces decoding/filesystem errors. A failed load never triggers a write, so corrupt bytes remain available for recovery.
+Actors protect scene storage, history, process approvals, and managed-process state. The orchestration scheduler owns run-local task groups and emits immutable snapshots. Retry timing and jitter are injectable for deterministic tests. On relaunch, stale live state is marked interrupted and the user chooses a new activation or cleanup; the application never invents success.
 
-## Error handling and cancellation
+## Test boundaries
 
-Domain validation provides field paths and readable messages. Adapter errors use typed localized errors. Nonzero exits and timeouts become action failures, including captured output. App errors are presented rather than swallowed. Cancellation is Swift task cancellation propagated through the executor to the process runner; the process is terminated and recorded as cancelled.
+SceneCore and OrchestrationEngine tests are platform-neutral. MacAutomation tests inject application, URL, file, health, and window adapters; automated tests never launch real apps or browsers. Harmless explicit process fixtures are permitted. Integration and activation parsing/audio-feature tests are deterministic. The Xcode application build validates the SwiftUI composition independently from package tests.
 
-## Testing strategy
+## Extension rules
 
-SceneCore tests cover schema round trips, unknown actions, validation, CRUD, missing storage, and corruption. MacAutomation tests use real harmless executables for process semantics and actors as mocks for application/URL adapters. Executor tests verify order, stopping, error preservation, nonzero exit, and cancellation. Automated tests never launch an application or browser. CI repeats Swift builds/tests and the unsigned native Xcode build.
+New scene actions require a backward-conscious schema change, validation, typed execution protocol, tests, documentation, and import-review representation. New side effects belong in an adapter module. Third-party dependencies require an ADR covering security, license, pinning, maintenance, and reproducibility.

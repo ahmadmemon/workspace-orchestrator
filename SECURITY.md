@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-The project is pre-release. Only the latest `main` revision is currently supported with security fixes.
+The project is pre-release. The latest `main` revision and most recently published V1 release candidate, if any, receive security fixes.
 
 ## Reporting a vulnerability
 
@@ -12,4 +12,4 @@ Maintainers should acknowledge a report promptly, reproduce it in an isolated en
 
 ## User safety
 
-Imported scenes are untrusted. Review every action before saving or running it, particularly executable paths and arguments. Workspace Orchestrator does not elevate privileges and never requires a shell command string. See `docs/SECURITY_MODEL.md` for the detailed threat model.
+Imported scenes are untrusted. Review every action, dependency, URL, path, executable, argument, environment reference, and stop policy before saving or running. Exact process approval does not make an executable harmless. Workspace Orchestrator does not elevate privileges and never accepts a shell command string. See `docs/SECURITY_MODEL.md` and `docs/THREAT_MODEL.md`.

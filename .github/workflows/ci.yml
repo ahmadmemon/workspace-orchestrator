@@ -2,23 +2,86 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/v1-release-candidate]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-test:
+  build-test-audit:
+    name: Build, test, audit, and package
     runs-on: macos-14
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Build SceneCore
-        run: swift build --target SceneCore
-      - name: Run all tests
-        run: swift test
-      - name: Build macOS app
+
+      - name: Select Xcode 15.4
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Record toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Verify version and security invariants
+        run: |
+          scripts/verify-version.sh
+          scripts/security-audit.sh
+
+      - name: Build Swift packages
+        run: |
+          swift build --target SceneCore
+          swift build
+
+      - name: Run package tests
+        run: swift test --parallel
+
+      - name: Run deterministic UI smoke suite
+        run: >-
+          xcodebuild -project WorkspaceOrchestrator.xcodeproj
+          -scheme WorkspaceOrchestratorApp
+          -destination 'platform=macOS,arch=arm64'
+          -derivedDataPath .build/XcodeDerivedData-UITests
+          test
+
+      - name: Build unsigned Debug app
         run: >-
           xcodebuild -project WorkspaceOrchestrator.xcodeproj
           -scheme WorkspaceOrchestratorApp
           -configuration Debug
           -destination 'platform=macOS,arch=arm64'
-          -derivedDataPath .build/XcodeDerivedData
+          -derivedDataPath .build/XcodeDerivedData-Debug
           CODE_SIGNING_ALLOWED=NO build
+
+      - name: Build unsigned universal Release app
+        run: >-
+          xcodebuild -project WorkspaceOrchestrator.xcodeproj
+          -scheme WorkspaceOrchestratorApp
+          -configuration Release
+          -destination 'generic/platform=macOS'
+          -derivedDataPath .build/XcodeDerivedData-Release
+          CODE_SIGNING_ALLOWED=NO
+          ARCHS='arm64 x86_64'
+          ONLY_ACTIVE_ARCH=NO build
+
+      - name: Create ad-hoc-signed verification package
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}/workspace-orchestrator-unsigned
+        run: scripts/build-release.sh
+
+      - name: Upload verification records
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-orchestrator-${{ github.sha }}-adhoc-verification
+          path: |
+            ${{ runner.temp }}/workspace-orchestrator-unsigned/*.zip
+            ${{ runner.temp }}/workspace-orchestrator-unsigned/*.txt
+            ${{ runner.temp }}/workspace-orchestrator-unsigned/*.json
+          if-no-files-found: error
+          retention-days: 14
